@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@source "./";
+
+html,
+body {
+  background: #0b0c0f;
+  -webkit-tap-highlight-color: transparent;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}

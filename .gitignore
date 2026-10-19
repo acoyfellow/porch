@@ -1,0 +1,7 @@
+node_modules/
+.alchemy/
+dist/
+.real/
+.wrangler/
+*.local.*
+public/app/

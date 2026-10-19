@@ -1,0 +1,48 @@
+import { Effect, Option, Queue, Schema, Stream } from 'effect';
+import { type PhoneToRelay, RelayToPhone } from '../../shared/protocol';
+import { Message } from './message';
+
+const decode = Schema.decodeUnknownOption(Schema.fromJsonString(RelayToPhone));
+
+let current: WebSocket | null = null;
+let wanted: string | null = null;
+
+const sendNow = (message: PhoneToRelay) => {
+  if (current?.readyState === WebSocket.OPEN) current.send(JSON.stringify(message));
+};
+
+export const openSurface = (surfaceId: string | null) => {
+  wanted = surfaceId;
+  sendNow({ _tag: 'Open', surfaceId });
+};
+
+const socketUrl = () => {
+  const url = new URL('/phone', globalThis.location.href);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  return url.toString();
+};
+
+export const phoneSocket: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const socket = new WebSocket(socketUrl());
+      current = socket;
+      socket.onopen = () => {
+        Queue.offerUnsafe(queue, Message.SocketOpened());
+        sendNow({ _tag: 'Open', surfaceId: wanted });
+      };
+      socket.onmessage = (event: MessageEvent<string>) => {
+        Option.map(decode(event.data), (message) => Queue.offerUnsafe(queue, Message.Received({ message })));
+      };
+      socket.onclose = () => Queue.offerUnsafe(queue, Message.SocketClosed());
+
+      return socket;
+    }),
+    (socket) =>
+      Effect.sync(() => {
+        if (current === socket) current = null;
+        socket.close();
+      }),
+  ).pipe(Effect.andThen(Effect.never)),
+);
