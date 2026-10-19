@@ -18,7 +18,6 @@
   },
   "include": [
     "src",
-    "shared",
-    "test"
+    "shared"
   ]
 }
