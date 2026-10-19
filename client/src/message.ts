@@ -14,6 +14,7 @@ export const Message = defineMessageUnion({
   ToggledGroup: { groupId: Schema.String },
   UpdatedDraft: { value: Schema.String },
   SubmittedDraft: {},
+  PressedStop: {},
   SendFinished: { requestId: Schema.String, ok: Schema.Boolean, reason: Schema.NullOr(Schema.String) },
   ScrolledFeed: { atBottom: Schema.Boolean },
   ClickedJumpToLatest: {},

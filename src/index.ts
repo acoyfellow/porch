@@ -19,6 +19,7 @@ const API = new Map<string, string>([
   ['/api/machine', '/machine'],
   ['/api/send', '/send'],
   ['/api/frame', '/frame'],
+  ['/api/key', '/key'],
 ]);
 
 const SECURITY_HEADERS = {

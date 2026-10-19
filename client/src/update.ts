@@ -1,6 +1,7 @@
 import type { Command } from 'foldkit';
 import type { PanelFrame, PiEntry, RelayToPhone } from '../../shared/protocol';
-import { FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SendText } from './command';
+import { FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendKey, SendText } from './command';
+import { storedDraft } from './draft';
 import { Message } from './message';
 import type { Model, Panel } from './model';
 
@@ -47,7 +48,7 @@ const received = (model: Model, message: RelayToPhone): Return => {
 
 const navigate = (model: Model, workspaceId: string | null, surfaceId: string | null, push: boolean): Return => {
   const changedSurface = surfaceId !== model.surfaceId;
-  const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail };
+  const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail, draft: changedSurface ? storedDraft(surfaceId) : model.draft };
   const commands = [...(changedSurface ? [OpenSurface({ surfaceId })] : []), ...(push ? [PushLocation({ workspaceId, surfaceId })] : [])];
 
   return { model: next, commands };
@@ -60,7 +61,7 @@ const submit = (model: Model): Return => {
   const requestId = newRequestId();
   const outgoing = [...model.outgoing, { requestId, text, state: 'sending' as const, reason: null }].slice(-MAX_OUTGOING);
 
-  return { model: { ...model, draft: '', outgoing, followTail: true }, commands: [SendText({ requestId, surfaceId: model.surfaceId, text }), JumpToLatest()] };
+  return { model: { ...model, draft: '', outgoing, followTail: true }, commands: [SendText({ requestId, surfaceId: model.surfaceId, text }), SaveDraft({ surfaceId: model.surfaceId, value: '' }), JumpToLatest()] };
 };
 
 export const update = (model: Model, message: Message): Return =>
@@ -76,7 +77,8 @@ export const update = (model: Model, message: Message): Return =>
     ToggledGroup: ({ groupId }) => ({
       model: { ...model, collapsed: model.collapsed.includes(groupId) ? model.collapsed.filter((id) => id !== groupId) : [...model.collapsed, groupId] },
     }),
-    UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
+    UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value }, commands: model.surfaceId ? [SaveDraft({ surfaceId: model.surfaceId, value })] : [] }),
+    PressedStop: () => (model.surfaceId ? { model, commands: [SendKey({ surfaceId: model.surfaceId, key: 'Escape' })] } : { model }),
     SubmittedDraft: () => submit(model),
     SendFinished: ({ requestId, ok, reason }) => ({
       model: {

@@ -67,6 +67,10 @@ export const PanelFrame = Schema.Union([
 
 export type PanelFrame = typeof PanelFrame.Type;
 
+export const AllowedKey = Schema.Literals(['Escape']);
+
+export type AllowedKey = typeof AllowedKey.Type;
+
 export const DaemonToRelay = Schema.Union([
   Schema.TaggedStruct('Hello', { machine: Schema.String, version: Schema.String }),
   Schema.TaggedStruct('Sidebar', { sidebar: Sidebar }),
@@ -79,6 +83,7 @@ export type DaemonToRelay = typeof DaemonToRelay.Type;
 export const RelayToDaemon = Schema.Union([
   Schema.TaggedStruct('Watch', { surfaceIds: Schema.Array(Schema.String) }),
   Schema.TaggedStruct('Send', { requestId: Schema.String, surfaceId: Schema.String, text: Schema.String, submit: Schema.Boolean }),
+  Schema.TaggedStruct('Key', { surfaceId: Schema.String, key: AllowedKey }),
 ]);
 
 export type RelayToDaemon = typeof RelayToDaemon.Type;
@@ -104,4 +109,5 @@ export const PHONE_PATH = '/phone';
 export const SIDEBAR_PATH = '/api/sidebar';
 export const SEND_PATH = '/api/send';
 export const FRAME_PATH = '/api/frame';
+export const KEY_PATH = '/api/key';
 export const MAX_SEND_LENGTH = 20_000;

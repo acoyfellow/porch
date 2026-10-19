@@ -101,3 +101,7 @@ export const sendText = async (surfaceId: string, text: string, submit: boolean)
 
   if (submit) await run(CMUX, ['send-key', '--surface', surfaceId, 'Enter'], { timeout: TIMEOUT_MS, encoding: 'utf8' });
 };
+
+export const sendKey = async (surfaceId: string, key: 'Escape'): Promise<void> => {
+  await run(CMUX, ['send-key', '--surface', surfaceId, key], { timeout: TIMEOUT_MS, encoding: 'utf8' });
+};

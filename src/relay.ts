@@ -42,6 +42,8 @@ export class Relay extends DurableObject {
 
     if (url.pathname === '/frame') return this.frameFromHttp(url);
 
+    if (url.pathname === '/key' && request.method === 'POST') return this.keyFromHttp(request);
+
     return new Response('not found', { status: 404 });
   }
 
@@ -184,6 +186,14 @@ export class Relay extends DurableObject {
     if (!this.toDaemon({ _tag: 'Send', requestId, surfaceId: body.surfaceId, text: body.text, submit: body.submit ?? true })) return Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
 
     return Response.json(await result);
+  }
+
+  private async keyFromHttp(request: Request): Promise<Response> {
+    const body = (await request.json()) as { surfaceId?: string; key?: string };
+
+    if (typeof body.surfaceId !== 'string' || body.key !== 'Escape') return Response.json({ ok: false, reason: 'bad request' }, { status: 400 });
+
+    return this.toDaemon({ _tag: 'Key', surfaceId: body.surfaceId, key: body.key }) ? Response.json({ ok: true }) : Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
   }
 
   private async frameFromHttp(url: URL): Promise<Response> {

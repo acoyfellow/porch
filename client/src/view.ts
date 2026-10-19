@@ -1,3 +1,4 @@
+import { Option } from 'effect';
 import type { Document, Html, HtmlBuilder } from 'foldkit/html';
 import type { Group, PiEntry, Surface, Workspace } from '../../shared/protocol';
 import { Message } from './message';
@@ -7,6 +8,8 @@ import { pathOf } from './route';
 type H = HtmlBuilder<Message>;
 
 const NEAR_BOTTOM_PX = 48;
+
+const isTouch = () => globalThis.matchMedia?.('(pointer: coarse)').matches === true;
 
 const isNearBottom = (scrollTop: number): boolean => {
   const feed = document.getElementById('feed');
@@ -223,9 +226,19 @@ const composer = (h: H, model: Model): Html =>
           h.Value(model.draft),
           h.Rows(1),
           h.OnInput((value) => Message.UpdatedDraft({ value })),
+          h.OnKeyDownPreventDefault((key, modifiers) => {
+            if (key === 'Escape') return Option.some(Message.PressedStop());
+
+            if (key === 'Enter' && !modifiers.shiftKey && !isTouch()) return Option.some(Message.SubmittedDraft());
+
+            return Option.none();
+          }),
           h.AriaLabel('Message'),
+          h.AriaDescribedBy('composer-hint'),
         ],
       ),
+      h.span([h.Id('composer-hint'), h.Class('sr-only')], [isTouch() ? 'Send with the Send button. Esc stops the agent.' : 'Enter sends, Shift+Enter adds a line, Esc stops the agent.']),
+      h.button([h.Id('stop'), h.Type('button'), h.Class('min-h-11 rounded-xl border border-zinc-700 px-3 text-[15px] text-zinc-200'), h.AriaLabel('Stop the agent (Esc)'), h.OnClick(Message.PressedStop())], ['Stop']),
       h.button([h.Id('send'), h.Type('submit'), h.Class('min-h-11 rounded-xl bg-sky-600 px-4 text-[15px] font-medium text-white disabled:opacity-40'), h.Disabled(!model.draft.trim())], ['Send']),
     ],
   );

@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
 import { Schema } from 'effect';
 import { type DaemonToRelay, type PanelFrame, type PiEntry, RelayToDaemon, type Sidebar } from '../shared/protocol';
-import { readScreen, readSidebar, sendText } from './cmux';
+import { readScreen, readSidebar, sendKey, sendText } from './cmux';
 import { loadConfig } from './config';
 import { openTail, piLinks, readNew, sessionFile, type Tail } from './pi';
 
@@ -84,6 +84,12 @@ const onMessage = async (raw: string) => {
   const message = decoded.value;
 
   if (message._tag === 'Watch') return setWatches(message.surfaceIds);
+
+  if (message._tag === 'Key') {
+    if (surfaceOf(message.surfaceId)) await sendKey(message.surfaceId, message.key).catch((error) => log('key failed', error));
+
+    return;
+  }
 
   if (!surfaceOf(message.surfaceId)) return send({ _tag: 'Sent', requestId: message.requestId, ok: false, reason: 'no such panel on your Mac' });
 

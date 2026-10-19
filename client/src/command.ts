@@ -1,8 +1,9 @@
 import { Effect, Schema } from 'effect';
 import { Command, Navigation } from 'foldkit';
-import { SEND_PATH } from '../../shared/protocol';
+import { KEY_PATH, SEND_PATH } from '../../shared/protocol';
 import { Message } from './message';
 import { pathOf } from './route';
+import { saveDraft } from './draft';
 import { openSurface } from './socket';
 
 const SendReply = Schema.Struct({ ok: Schema.Boolean, reason: Schema.optional(Schema.NullOr(Schema.String)) });
@@ -58,3 +59,18 @@ export const FollowTail = Command.define('FollowTail', {
 });
 
 export const newRequestId = () => crypto.randomUUID();
+
+export const SaveDraft = Command.define('SaveDraft', {
+  args: { surfaceId: Schema.String, value: Schema.String },
+  messages: [Message.CompletedEffect],
+  execute: ({ surfaceId, value }) => Effect.sync(() => saveDraft(surfaceId, value)).pipe(Effect.as(Message.CompletedEffect())),
+});
+
+export const SendKey = Command.define('SendKey', {
+  args: { surfaceId: Schema.String, key: Schema.Literals(['Escape']) },
+  messages: [Message.CompletedEffect],
+  execute: ({ surfaceId, key }) =>
+    Effect.tryPromise(() =>
+      fetch(KEY_PATH, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ surfaceId, key }) }),
+    ).pipe(Effect.as(Message.CompletedEffect()), Effect.orElseSucceed(() => Message.CompletedEffect())),
+});
