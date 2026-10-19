@@ -1,6 +1,6 @@
 import type { Command } from 'foldkit';
 import type { PanelFrame, PiEntry, RelayToPhone } from '../../shared/protocol';
-import { FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendKey, SendText } from './command';
+import { CopyText, FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendKey, SendText } from './command';
 import { storedDraft } from './draft';
 import { Message } from './message';
 import type { Model, Panel } from './model';
@@ -78,6 +78,7 @@ export const update = (model: Model, message: Message): Return =>
       model: { ...model, collapsed: model.collapsed.includes(groupId) ? model.collapsed.filter((id) => id !== groupId) : [...model.collapsed, groupId] },
     }),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value }, commands: model.surfaceId ? [SaveDraft({ surfaceId: model.surfaceId, value })] : [] }),
+    ClickedCopy: ({ text }) => ({ model, commands: [CopyText({ text })] }),
     PressedStop: () => (model.surfaceId ? { model, commands: [SendKey({ surfaceId: model.surfaceId, key: 'Escape' })] } : { model }),
     SubmittedDraft: () => submit(model),
     SendFinished: ({ requestId, ok, reason }) => ({

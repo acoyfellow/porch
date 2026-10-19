@@ -196,10 +196,20 @@ const ROLE_STYLE: Record<string, string> = {
   notice: 'text-center text-xs text-zinc-500',
 };
 
+const COPYABLE = new Set(['user', 'assistant']);
+
 const entryView = (h: H, entry: PiEntry): Html =>
   h.li(
-    [h.DataAttribute('role', entry.role), h.DataAttribute('entry', entry.id), h.Class(`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${ROLE_STYLE[entry.role] ?? 'text-zinc-300'}`)],
-    [entry.role === 'toolCall' ? `→ ${entry.tool ?? 'tool'} ${entry.text}` : entry.text],
+    [h.DataAttribute('role', entry.role), h.DataAttribute('entry', entry.id), h.Class(`group relative whitespace-pre-wrap break-words text-[15px] leading-relaxed ${ROLE_STYLE[entry.role] ?? 'text-zinc-300'}`)],
+    [
+      entry.role === 'toolCall' ? `→ ${entry.tool ?? 'tool'} ${entry.text}` : entry.text,
+      COPYABLE.has(entry.role)
+        ? h.button(
+            [h.Class('copy mt-1 block min-h-8 rounded-md px-2 text-xs text-zinc-500 active:bg-zinc-800'), h.AriaLabel('Copy message'), h.OnClick(Message.ClickedCopy({ text: entry.text }))],
+            ['Copy'],
+          )
+        : null,
+    ],
   );
 
 const outgoingView = (h: H, outgoing: Outgoing): Html =>
@@ -236,7 +246,7 @@ const composer = (h: H, model: Model): Html =>
           h.Class('max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-base text-zinc-100 placeholder:text-zinc-500'),
           h.Placeholder(model.panel._tag === 'Pi' ? 'Message this Pi session' : 'Type into this terminal'),
           h.Value(model.draft),
-          h.Rows(1),
+          h.Rows(Math.min(6, Math.max(1, model.draft.split('\n').length))),
           h.OnInput((value) => Message.UpdatedDraft({ value })),
           h.OnKeyDownPreventDefault((key, modifiers) => {
             if (key === 'Escape') return Option.some(Message.PressedStop());

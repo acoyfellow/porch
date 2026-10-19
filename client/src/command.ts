@@ -74,3 +74,9 @@ export const SendKey = Command.define('SendKey', {
       fetch(KEY_PATH, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ surfaceId, key }) }),
     ).pipe(Effect.as(Message.CompletedEffect()), Effect.orElseSucceed(() => Message.CompletedEffect())),
 });
+
+export const CopyText = Command.define('CopyText', {
+  args: { text: Schema.String },
+  messages: [Message.CompletedEffect],
+  execute: ({ text }) => Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(Effect.as(Message.CompletedEffect()), Effect.orElseSucceed(() => Message.CompletedEffect())),
+});
