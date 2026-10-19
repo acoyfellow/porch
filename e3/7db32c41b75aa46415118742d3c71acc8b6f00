@@ -1,0 +1,25 @@
+client/src/entry.ts
+  s_5ddfc8f4108175::t_4357dd09701f13 10,26,48,50-51
+client/src/model.ts
+  s_5ddfc8f4108175::t_cbf1cc9b0329a7 24
+client/src/update.ts
+  s_5ddfc8f4108175::t_eb3952792734aa 69-70,92
+client/src/view.ts
+  s_5ddfc8f4108175::t_122948d82a63be 12-13,47,55-64,72,262,282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e37db32c41b75aa46415118742d3c71acc8b6f00",
+  "prompts": {},
+  "sessions": {
+    "s_5ddfc8f4108175": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0fc06-d951-77a8-8358-cd5dae6891bd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Jordan Coeyman <jcoeyman@cloudflare.com>"
+    }
+  }
+}
