@@ -7,7 +7,7 @@ import { Model } from './model';
 import { locationOf } from './route';
 import { phoneSocket } from './socket';
 import { update } from './update';
-import { view } from './view';
+import { MAX_RECONNECTS, view } from './view';
 
 const Flags = Schema.Struct({ who: Schema.String, now: Schema.Number, workspaceId: Schema.NullOr(Schema.String), surfaceId: Schema.NullOr(Schema.String) });
 
@@ -23,6 +23,7 @@ const init = (input: Flags) => ({
   model: {
     connection: 'connecting' as const,
     socketEpoch: 0,
+    failures: 0,
     machine: null,
     machineOnline: false,
     machineSeenAt: null,
@@ -44,10 +45,10 @@ const reconnectDelay = (epoch: number) => Duration.millis(epoch === 0 ? 0 : Math
 
 const subscriptions = Subscription.make<Model, Message, never>()((entry) => ({
   socket: entry(
-    { epoch: Schema.Number },
+    { epoch: Schema.Number, failures: Schema.Number },
     {
-      modelToDependencies: (model) => ({ epoch: model.socketEpoch }),
-      dependenciesToStream: ({ epoch }) => Stream.fromEffect(Effect.sleep(reconnectDelay(epoch))).pipe(Stream.flatMap(() => phoneSocket)),
+      modelToDependencies: (model) => ({ epoch: model.failures > MAX_RECONNECTS ? -1 : model.socketEpoch, failures: model.failures > MAX_RECONNECTS ? 0 : model.failures }),
+      dependenciesToStream: ({ epoch, failures }) => (epoch < 0 ? Stream.empty : Stream.fromEffect(Effect.sleep(reconnectDelay(failures))).pipe(Stream.flatMap(() => phoneSocket))),
     },
   ),
   clock: entry(

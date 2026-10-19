@@ -21,6 +21,7 @@ export type Outgoing = typeof Outgoing.Type;
 export const Model = Schema.Struct({
   connection: Connection,
   socketEpoch: Schema.Number,
+  failures: Schema.Number,
   machine: Schema.NullOr(Schema.String),
   machineOnline: Schema.Boolean,
   machineSeenAt: Schema.NullOr(Schema.Number),

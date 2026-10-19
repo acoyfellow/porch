@@ -66,8 +66,8 @@ const submit = (model: Model): Return => {
 
 export const update = (model: Model, message: Message): Return =>
   Message.match<Return>(message, {
-    SocketOpened: () => ({ model: { ...model, connection: 'online' } }),
-    SocketClosed: () => ({ model: { ...model, connection: 'offline', socketEpoch: model.socketEpoch + 1 } }),
+    SocketOpened: () => ({ model: { ...model, connection: 'online', failures: 0 } }),
+    SocketClosed: () => ({ model: { ...model, connection: 'offline', socketEpoch: model.socketEpoch + 1, failures: model.failures + 1 } }),
     Received: ({ message: incoming }) => received(model, incoming),
     Ticked: ({ now }) => ({ model: { ...model, now } }),
     NavigatedTo: ({ workspaceId, surfaceId }) => navigate(model, workspaceId, surfaceId, false),
@@ -89,6 +89,6 @@ export const update = (model: Model, message: Message): Return =>
     }),
     ScrolledFeed: ({ atBottom }) => ({ model: { ...model, followTail: atBottom } }),
     ClickedJumpToLatest: () => ({ model: { ...model, followTail: true }, commands: [JumpToLatest()] }),
-    ClickedReconnect: () => ({ model: { ...model, connection: 'connecting', socketEpoch: model.socketEpoch + 1 } }),
+    ClickedReconnect: () => ({ model: { ...model, connection: 'connecting', socketEpoch: model.socketEpoch + 1, failures: 0 } }),
     CompletedEffect: () => ({ model }),
   });

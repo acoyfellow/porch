@@ -9,6 +9,8 @@ type H = HtmlBuilder<Message>;
 
 const NEAR_BOTTOM_PX = 48;
 
+export const MAX_RECONNECTS = 6;
+
 const isTouch = () => globalThis.matchMedia?.('(pointer: coarse)').matches === true;
 
 const isNearBottom = (scrollTop: number): boolean => {
@@ -42,7 +44,7 @@ const statusBar = (h: H, model: Model): Html => {
     [h.Id('status'), h.Class('flex items-center gap-2 px-4 py-2 text-xs text-zinc-400 border-b border-zinc-800/80'), h.Role('status'), h.AriaLive('polite')],
     [
       h.span([h.Class(`inline-block size-2 rounded-full ${live && model.machineOnline ? 'bg-emerald-400' : live ? 'bg-amber-400' : 'bg-zinc-600'}`), h.AriaHidden(true)], []),
-      h.span([h.DataAttribute('connection', model.connection)], [live ? mac : model.connection === 'connecting' ? 'Connecting…' : 'Disconnected']),
+      h.span([h.DataAttribute('connection', model.connection)], [live ? mac : model.connection === 'connecting' ? 'Connecting…' : model.failures > MAX_RECONNECTS ? 'Could not reach porch. Stopped retrying.' : `Reconnecting… (attempt ${model.failures})`]),
       model.connection === 'offline'
         ? h.button([h.Id('reconnect'), h.Class('ml-auto rounded-md border border-zinc-700 px-2 py-1 text-zinc-200'), h.OnClick(Message.ClickedReconnect())], ['Reconnect'])
         : null,
@@ -50,7 +52,16 @@ const statusBar = (h: H, model: Model): Html => {
   );
 };
 
-const header = (h: H, title: string, back: boolean): Html =>
+const account = (h: H, who: string): Html =>
+  h.div(
+    [h.Class('ml-auto flex items-center gap-2 pr-2 text-xs text-zinc-500')],
+    [
+      who ? h.span([h.Id('who'), h.Class('hidden max-w-40 truncate sm:inline'), h.Title(who)], [who]) : null,
+      h.a([h.Id('sign-out'), h.Href('/cdn-cgi/access/logout'), h.Class('flex min-h-11 items-center rounded-lg px-3 text-zinc-300 active:bg-zinc-800'), h.Title(who ? `Signed in as ${who}` : 'Sign out')], ['Sign out']),
+    ],
+  );
+
+const header = (h: H, title: string, back: boolean, who: string): Html =>
   h.header(
     [h.Class('sticky top-0 z-10 flex min-h-12 items-center gap-2 bg-[#0b0c0f]/95 px-2 backdrop-blur pt-[env(safe-area-inset-top)]')],
     [
@@ -58,6 +69,7 @@ const header = (h: H, title: string, back: boolean): Html =>
         ? h.button([h.Id('back'), h.Class('flex size-11 items-center justify-center rounded-lg text-xl text-zinc-300 active:bg-zinc-800'), h.AriaLabel('Back'), h.OnClick(Message.ClickedBack())], ['‹'])
         : h.span([h.Class('pl-3 font-mono text-sm font-semibold tracking-wide text-zinc-200')], ['porch']),
       h.h1([h.Class('truncate text-[15px] font-semibold text-zinc-100')], [back ? title : '']),
+      account(h, who),
     ],
   );
 
@@ -247,7 +259,7 @@ const panelView = (h: H, model: Model): Html =>
   h.div(
     [h.Class('flex min-h-0 flex-1 flex-col')],
     [
-      h.div([h.Id('feed'), h.Class('relative min-h-0 flex-1 overflow-y-auto overscroll-contain'), h.OnScroll((scrollTop) => Message.ScrolledFeed({ atBottom: isNearBottom(scrollTop) }))], [panelBody(h, model)]),
+      h.div([h.Id('feed'), h.Role('log'), h.AriaLive('polite'), h.Class('relative min-h-0 flex-1 overflow-y-auto overscroll-contain'), h.OnScroll((scrollTop) => Message.ScrolledFeed({ atBottom: isNearBottom(scrollTop) }))], [panelBody(h, model)]),
       model.followTail
         ? null
         : h.button([h.Id('jump-to-latest'), h.Class('absolute bottom-24 right-4 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-200 shadow'), h.OnClick(Message.ClickedJumpToLatest())], ['Jump to latest']),
@@ -267,7 +279,7 @@ export const view = (model: Model, h: H): Document => {
     body: h.div(
       [h.Class('relative mx-auto flex h-dvh max-w-2xl flex-col')],
       [
-        header(h, title, model.workspaceId !== null),
+        header(h, title, model.workspaceId !== null, model.who),
         statusBar(h, model),
         model.surfaceId
           ? panelView(h, model)
