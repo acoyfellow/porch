@@ -25,10 +25,25 @@ export const piLinks = async (): Promise<ReadonlyMap<string, PiLink>> => {
       if (!seen || (session.updatedAt ?? 0) > (seen.updatedAt ?? 0)) latest.set(key, session);
     }
 
-    return new Map([...latest].map(([surface, session]) => [surface, { sessionId: session.sessionId ?? '', status: session.runtimeStatus ?? 'unknown' }]));
+    const links = await Promise.all([...latest].map(async ([surface, session]) => [surface, { sessionId: session.sessionId ?? '', status: await observedStatus(session) }] as const));
+
+    return new Map(links);
   } catch {
     return new Map();
   }
+};
+
+const ACTIVE_WINDOW_MS = 60_000;
+
+const observedStatus = async (session: HookSession): Promise<string> => {
+  const reported = session.runtimeStatus ?? 'unknown';
+
+  if (reported !== 'running') return reported;
+
+  const path = session.sessionId ? await sessionFile(session.sessionId) : null;
+  const modified = path ? await stat(path).then((info) => info.mtimeMs).catch(() => 0) : 0;
+
+  return Date.now() - modified < ACTIVE_WINDOW_MS ? 'running' : 'idle';
 };
 
 const fileCache = new Map<string, string>();
