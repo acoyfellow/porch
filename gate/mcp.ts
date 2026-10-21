@@ -1,11 +1,13 @@
 import { execFileSync } from 'node:child_process';
+import { mcpCredentials } from './credentials';
 
 const origin = process.argv[2] ?? 'http://127.0.0.1:8790';
 const isLocal = /^http:\/\/(127\.0\.0\.1|localhost)/u.test(origin);
-const clientId = process.env.PORCH_MCP_CLIENT_ID;
-const clientSecret = process.env.PORCH_MCP_CLIENT_SECRET;
+const credentials = isLocal ? null : mcpCredentials();
 
-if (!isLocal && (!clientId || !clientSecret)) throw new Error('set PORCH_MCP_CLIENT_ID and PORCH_MCP_CLIENT_SECRET to test a deployed origin');
+if (!isLocal && !credentials) throw new Error('no MCP credentials: set PORCH_MCP_CLIENT_ID/SECRET or store them in the porch-mcp keychain item');
+const clientId = credentials?.clientId;
+const clientSecret = credentials?.clientSecret;
 
 const authHeaders: Record<string, string> = isLocal ? { 'x-porch-dev-caller': 'mcp' } : { 'cf-access-client-id': clientId ?? '', 'cf-access-client-secret': clientSecret ?? '' };
 
