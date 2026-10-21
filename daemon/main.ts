@@ -60,8 +60,23 @@ const sendFileFrame = async (watch: Watch, surface: Surface | null) => {
   frame({ _tag: 'File', surfaceId: watch.surfaceId, name: info.name, mime: info.mime, size: info.size, mediaUrl: `/api/media?surface=${encodeURIComponent(watch.surfaceId)}` });
 };
 
+const FORCED_REFRESH_MS = 1500;
+let lastForcedRefresh = 0;
+
+const knownSurface = async (surfaceId: string): Promise<Surface | null> => {
+  const cached = surfaceOf(surfaceId);
+
+  if (cached) return cached;
+
+  if (Date.now() - lastForcedRefresh < FORCED_REFRESH_MS) return null;
+  lastForcedRefresh = Date.now();
+  await refreshSidebar().catch(() => undefined);
+
+  return surfaceOf(surfaceId);
+};
+
 const startWatch = async (surfaceId: string, viewport: PinnedViewport | null): Promise<Watch> => {
-  const surface = surfaceOf(surfaceId);
+  const surface = await knownSurface(surfaceId);
   const watch: Watch = { surfaceId, kind: kindOfSurface(surface), tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '', capturing: false, stopped: false, viewport, pinned: '', everPinned: false };
 
   if (watch.kind === 'file') {
@@ -133,7 +148,7 @@ const streamScreen = async (watch: Watch) => {
 };
 
 const pollWatch = async (watch: Watch) => {
-  const surface = surfaceOf(watch.surfaceId);
+  const surface = await knownSurface(watch.surfaceId);
 
   if (sidebar && !surface) return frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
 
@@ -274,9 +289,14 @@ const onMessage = async (raw: string) => {
   }
 };
 
+const refreshSidebar = async () => {
+  sidebar = await readSidebar(await piLinks());
+
+  return sidebar;
+};
+
 const pushSidebar = async () => {
-  const next = await readSidebar(await piLinks());
-  sidebar = next;
+  const next = await refreshSidebar();
   const key = JSON.stringify({ ...next, at: 0 });
 
   if (key === lastSidebar) return;
