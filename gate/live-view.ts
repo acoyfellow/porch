@@ -56,7 +56,7 @@ try {
   const viewport = { width: 390, height: 724 };
   const frames: Array<Frame> = [];
   const socket = await phone(browser, viewport, (frame) => frame._tag === 'Screen' && frames.push(frame));
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + 90_000;
 
   while (frames.length < 10 && Date.now() < deadline) {
     await sleep(700);

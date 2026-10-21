@@ -115,6 +115,11 @@ const streamScreen = async (watch: Watch) => {
 
   try {
     while (!watch.stopped && socket?.readyState === WebSocket.OPEN) {
+      if (sidebar && !surfaceOf(watch.surfaceId)) {
+        frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
+        watch.stopped = true;
+        break;
+      }
       const pinKey = watch.viewport ? `${watch.viewport.width}x${watch.viewport.height}` : '';
 
       if (watch.viewport && watch.pinned !== pinKey) {
