@@ -17,7 +17,7 @@ const decode = Schema.decodeUnknownOption(Schema.fromJsonString(RelayToDaemon));
 
 type WatchKind = 'pi' | 'text' | 'screen' | 'file' | 'unsupported';
 
-type Watch = { readonly surfaceId: string; kind: WatchKind; tail: Tail | null; sessionId: string | null; lastText: string; capturing: boolean; stopped: boolean; viewport: PinnedViewport | null; pinned: string; everPinned: boolean };
+type Watch = { readonly surfaceId: string; kind: WatchKind; tail: Tail | null; sessionId: string | null; lastText: string; capturing: boolean; stopped: boolean; viewport: PinnedViewport | null; pinned: string; everPinned: boolean; missingSince: number | null };
 
 const config = await loadConfig();
 const watches = new Map<string, Watch>();
@@ -77,7 +77,7 @@ const knownSurface = async (surfaceId: string): Promise<Surface | null> => {
 
 const startWatch = async (surfaceId: string, viewport: PinnedViewport | null): Promise<Watch> => {
   const surface = await knownSurface(surfaceId);
-  const watch: Watch = { surfaceId, kind: kindOfSurface(surface), tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '', capturing: false, stopped: false, viewport, pinned: '', everPinned: false };
+  const watch: Watch = { surfaceId, kind: kindOfSurface(surface), tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '', capturing: false, stopped: false, viewport, pinned: '', everPinned: false, missingSince: null };
 
   if (watch.kind === 'file') {
     await sendFileFrame(watch, surface);
@@ -115,7 +115,7 @@ const streamScreen = async (watch: Watch) => {
 
   try {
     while (!watch.stopped && socket?.readyState === WebSocket.OPEN) {
-      if (sidebar && !surfaceOf(watch.surfaceId)) {
+      if (isGone(watch, surfaceOf(watch.surfaceId) !== null)) {
         frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
         watch.stopped = true;
         break;
@@ -152,10 +152,25 @@ const streamScreen = async (watch: Watch) => {
   }
 };
 
+const GONE_AFTER_MS = 3000;
+
+const isGone = (watch: Watch, present: boolean): boolean => {
+  if (present || !sidebar) {
+    watch.missingSince = null;
+
+    return false;
+  }
+  watch.missingSince ??= Date.now();
+
+  return Date.now() - watch.missingSince >= GONE_AFTER_MS;
+};
+
 const pollWatch = async (watch: Watch) => {
   const surface = await knownSurface(watch.surfaceId);
 
-  if (sidebar && !surface) return frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
+  if (isGone(watch, surface !== null)) return frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
+
+  if (!surface) return;
 
   if (watch.kind === 'text' && surface && kindOfSurface(surface) !== 'text') {
     watch.kind = kindOfSurface(surface);

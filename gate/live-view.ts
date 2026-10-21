@@ -86,7 +86,8 @@ try {
   writeFileSync(txt, 'porch');
 
   for (const [path, mime] of [[png, 'image/png'], [mp4, 'video/mp4']] as const) {
-    const surface = created(cmux(['open', path, '--no-focus', '--id-format', 'uuids'])) ?? (await findFileSurface(path));
+    cmux(['open', path, '--no-focus']);
+    const surface = await findFileSurface(path);
 
     if (!surface) {
       check(`file pane ${mime}`, false, 'cmux did not open it');
@@ -112,7 +113,8 @@ try {
     }
   }
 
-  const odd = created(cmux(['open', txt, '--no-focus', '--id-format', 'uuids'])) ?? (await findFileSurface(txt));
+  cmux(['open', txt, '--no-focus']);
+  const odd = await findFileSurface(txt);
 
   if (odd) {
     surfaces.push(odd);
@@ -139,10 +141,15 @@ try {
 }
 
 async function findFileSurface(path: string): Promise<string | null> {
-  await sleep(2500);
-  const list = JSON.parse(cmux(['rpc', 'mobile.workspace.list', '{}'])) as { workspaces: ReadonlyArray<{ surfaces?: ReadonlyArray<{ surface_id: string; file_path?: string }> }> };
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await sleep(500);
+    const list = JSON.parse(cmux(['rpc', 'mobile.workspace.list', '{}'])) as { workspaces: ReadonlyArray<{ surfaces?: ReadonlyArray<{ surface_id: string; file_path?: string }> }> };
+    const found = list.workspaces.flatMap((workspace) => workspace.surfaces ?? []).find((surface) => surface.file_path === path)?.surface_id;
 
-  return list.workspaces.flatMap((workspace) => workspace.surfaces ?? []).find((surface) => surface.file_path === path)?.surface_id ?? null;
+    if (found) return found;
+  }
+
+  return null;
 }
 
 for (const [name, ok, detail] of results) console.log(`${ok ? 'PASS' : 'FAIL'} ${name} (${detail})`);
