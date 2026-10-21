@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { parseRange } from './range';
 import { Schema } from 'effect';
 import { AllowedKey, BrowserInput, DaemonToRelay, MAX_SEND_LENGTH, type PanelFrame, PhoneToRelay, type RelayToDaemon, type RelayToPhone, type Sidebar } from '../shared/protocol';
 
@@ -9,12 +10,19 @@ const MACHINE_KEY = 'machine';
 const SEND_TIMEOUT_MS = 10_000;
 const HTTP_WATCH_MS = 120_000;
 
-type PhoneAttachment = { readonly role: 'phone'; readonly open: string | null };
+type PhoneAttachment = { readonly role: 'phone'; readonly open: string | null; readonly viewport?: { readonly width: number; readonly height: number }; readonly readOnly?: boolean };
 
 type MachineRecord = { readonly machine: string; readonly seenAt: number };
 
+const MEDIA_TIMEOUT_MS = 15_000;
+const ACTION_SETTLE_MS = 400;
+
+type MediaChunk = Extract<DaemonToRelay, { readonly _tag: 'MediaChunk' }>;
+
 const decodeDaemon = Schema.decodeUnknownOption(Schema.fromJsonString(DaemonToRelay));
 const decodePhone = Schema.decodeUnknownOption(Schema.fromJsonString(PhoneToRelay));
+
+const phoneViewport = (socket: WebSocket) => (socket.deserializeAttachment() as PhoneAttachment | null)?.viewport ?? null;
 
 const phoneOpen = (socket: WebSocket): string | null => {
   const attachment = socket.deserializeAttachment() as PhoneAttachment | null;
@@ -27,6 +35,13 @@ export class Relay extends DurableObject {
   private readonly frames = new Map<string, PanelFrame>();
   private readonly httpWatch = new Map<string, number>();
   private readonly frameTimes = new Map<string, number>();
+  private readonly actionTimes = new Map<string, number>();
+  private closing: WebSocket | null = null;
+
+  private markAction(surfaceId: string) {
+    this.actionTimes.set(surfaceId, Date.now() + ACTION_SETTLE_MS);
+  }
+  private readonly pendingMedia = new Map<string, (chunk: MediaChunk | null) => void>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -34,6 +49,8 @@ export class Relay extends DurableObject {
     if (url.pathname === '/daemon') return this.accept(DAEMON_TAG, null);
 
     if (url.pathname === '/phone') return this.accept(PHONE_TAG, { role: 'phone', open: null });
+
+    if (url.pathname === '/phone-watch') return this.accept(PHONE_TAG, { role: 'phone', open: null, readOnly: true });
 
     if (url.pathname === '/sidebar') return Response.json((await this.ctx.storage.get<Sidebar>(SIDEBAR_KEY)) ?? null);
 
@@ -46,6 +63,8 @@ export class Relay extends DurableObject {
     if (url.pathname === '/key' && request.method === 'POST') return this.keyFromHttp(request);
 
     if (url.pathname === '/browser' && request.method === 'POST') return this.browserFromHttp(request);
+
+    if (url.pathname === '/media') return this.mediaFromHttp(request, url);
 
     return new Response('not found', { status: 404 });
   }
@@ -96,8 +115,12 @@ export class Relay extends DurableObject {
     for (const phone of this.ctx.getWebSockets(PHONE_TAG)) if (onlySurface === null || phoneOpen(phone) === onlySurface) this.toPhone(phone, message);
   }
 
+  private livePhones(): ReadonlyArray<WebSocket> {
+    return this.ctx.getWebSockets(PHONE_TAG).filter((phone) => phone !== this.closing && phone.readyState === WebSocket.READY_STATE_OPEN);
+  }
+
   private watched(extra: ReadonlyArray<string> = []): ReadonlyArray<string> {
-    const open = this.ctx.getWebSockets(PHONE_TAG).flatMap((phone) => {
+    const open = this.livePhones().flatMap((phone) => {
       const surface = phoneOpen(phone);
 
       return surface ? [surface] : [];
@@ -110,7 +133,13 @@ export class Relay extends DurableObject {
   }
 
   private rewatch(extra: ReadonlyArray<string> = [], refresh: ReadonlyArray<string> = []) {
-    this.toDaemon({ _tag: 'Watch', surfaceIds: [...this.watched(extra)], refresh: [...refresh] });
+    const viewports = this.livePhones().flatMap((phone) => {
+      const surfaceId = phoneOpen(phone);
+      const viewport = phoneViewport(phone);
+
+      return surfaceId && viewport ? [{ surfaceId, width: viewport.width, height: viewport.height }] : [];
+    });
+    this.toDaemon({ _tag: 'Watch', surfaceIds: [...this.watched(extra)], refresh: [...refresh], viewports });
   }
 
   async webSocketMessage(socket: WebSocket, raw: string | ArrayBuffer) {
@@ -147,6 +176,11 @@ export class Relay extends DurableObject {
         this.broadcast({ _tag: 'Frame', frame: message.frame }, message.frame.surfaceId);
 
         return;
+      case 'MediaChunk':
+        this.pendingMedia.get(message.requestId)?.(message);
+        this.pendingMedia.delete(message.requestId);
+
+        return;
       case 'Sent':
         this.pendingSends.get(message.requestId)?.({ ok: message.ok, reason: message.reason });
         this.pendingSends.delete(message.requestId);
@@ -163,14 +197,18 @@ export class Relay extends DurableObject {
     const message = decoded.value;
 
     if (message._tag === 'Open') {
-      socket.serializeAttachment({ role: 'phone', open: message.surfaceId } satisfies PhoneAttachment);
-      this.rewatch();
+      const changed = phoneOpen(socket) !== message.surfaceId;
+      const readOnly = (socket.deserializeAttachment() as PhoneAttachment | null)?.readOnly === true;
+      socket.serializeAttachment({ role: 'phone', open: message.surfaceId, ...(message.viewport ? { viewport: message.viewport } : {}), ...(readOnly ? { readOnly } : {}) } satisfies PhoneAttachment);
+      this.rewatch([], changed && message.surfaceId ? [message.surfaceId] : []);
       const cached = message.surfaceId ? this.frames.get(message.surfaceId) : undefined;
 
       if (cached) this.toPhone(socket, { _tag: 'Frame', frame: cached });
 
       return;
     }
+
+    if ((socket.deserializeAttachment() as PhoneAttachment | null)?.readOnly) return;
 
     if (message._tag === 'Browser') {
       this.toDaemon({ _tag: 'Browser', surfaceId: message.surfaceId, input: message.input });
@@ -193,6 +231,8 @@ export class Relay extends DurableObject {
       setTimeout(() => resolve({ ok: false, reason: 'timed out waiting for your Mac' }), SEND_TIMEOUT_MS);
     });
 
+    this.markAction(body.surfaceId);
+
     if (!this.toDaemon({ _tag: 'Send', requestId, surfaceId: body.surfaceId, text: body.text, submit: body.submit ?? true })) return Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
 
     return Response.json(await result);
@@ -205,6 +245,8 @@ export class Relay extends DurableObject {
 
     if (typeof body.surfaceId !== 'string' || key._tag === 'None') return Response.json({ ok: false, reason: 'bad request' }, { status: 400 });
 
+    this.markAction(body.surfaceId);
+
     return this.toDaemon({ _tag: 'Key', surfaceId: body.surfaceId, key: key.value }) ? Response.json({ ok: true }) : Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
   }
 
@@ -214,7 +256,33 @@ export class Relay extends DurableObject {
 
     if (typeof body.surfaceId !== 'string' || input._tag === 'None') return Response.json({ ok: false, reason: 'bad request' }, { status: 400 });
 
+    this.markAction(body.surfaceId);
+
     return this.toDaemon({ _tag: 'Browser', surfaceId: body.surfaceId, input: input.value }) ? Response.json({ ok: true }) : Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
+  }
+
+  private async mediaFromHttp(request: Request, url: URL): Promise<Response> {
+    const surfaceId = url.searchParams.get('surface');
+
+    if (!surfaceId) return new Response('surface is required', { status: 400 });
+    const range = parseRange(request.headers.get('range'));
+    const requestId = crypto.randomUUID();
+    const chunk = new Promise<MediaChunk | null>((resolve) => {
+      this.pendingMedia.set(requestId, resolve);
+      setTimeout(() => resolve(null), MEDIA_TIMEOUT_MS);
+    });
+
+    if (!this.toDaemon({ _tag: 'MediaRequest', requestId, surfaceId, start: range?.start ?? 0, end: range?.end ?? null })) return new Response('your Mac is offline', { status: 503 });
+    const result = await chunk;
+    this.pendingMedia.delete(requestId);
+
+    if (!result || !result.ok) return new Response('file not available', { status: 404 });
+    const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0));
+    const headers = { 'content-type': result.mime, 'accept-ranges': 'bytes', 'content-length': String(bytes.length), 'cache-control': 'private, max-age=60' };
+
+    if (!range && result.end === result.total - 1) return new Response(bytes, { status: 200, headers });
+
+    return new Response(bytes, { status: 206, headers: { ...headers, 'content-range': `bytes ${result.start}-${result.end}/${result.total}` } });
   }
 
   private async frameFromHttp(url: URL): Promise<Response> {
@@ -222,7 +290,8 @@ export class Relay extends DurableObject {
 
     if (!surfaceId) return Response.json({ frame: null }, { status: 400 });
     const wait = Number(url.searchParams.get('wait') ?? '0');
-    const newerThan = Number(url.searchParams.get('after') ?? '0');
+    const requested = Number(url.searchParams.get('after') ?? '0');
+    const newerThan = url.searchParams.get('sinceAction') ? Math.max(requested, this.actionTimes.get(surfaceId) ?? 0) : requested;
 
     this.httpWatch.set(surfaceId, Date.now() + HTTP_WATCH_MS);
     this.rewatch([], newerThan > 0 ? [surfaceId] : []);
@@ -241,6 +310,12 @@ export class Relay extends DurableObject {
 
       return;
     }
-    this.rewatch();
+    this.closing = socket;
+
+    try {
+      this.rewatch();
+    } finally {
+      this.closing = null;
+    }
   }
 }

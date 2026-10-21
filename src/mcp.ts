@@ -7,6 +7,7 @@ const PROTOCOL_VERSION = '2025-06-18';
 const SERVER_INFO = { name: 'porch', version: '0.1.0' };
 const READ_WAIT_MS = 12_000;
 
+
 type Content = { readonly type: 'text'; readonly text: string } | { readonly type: 'image'; readonly data: string; readonly mimeType: string };
 
 type ToolResult = { readonly content: ReadonlyArray<Content>; readonly isError?: boolean };
@@ -53,7 +54,10 @@ const frameContent = (frame: PanelFrame): ToolResult => {
     case 'Text':
       return text(frame.text);
     case 'Gone':
+    case 'Unsupported':
       return text(frame.reason, true);
+    case 'File':
+      return text(`${frame.name}\n${frame.mime}, ${frame.size} bytes\nstream: ${frame.mediaUrl}`);
     case 'Pi':
       return text(frame.entries.map((entry) => `[${entry.role}${entry.tool ? ` ${entry.tool}` : ''}] ${entry.text}`).join('\n\n') || '(no entries yet)');
     case 'Screen': {
@@ -84,7 +88,7 @@ const TOOLS: ReadonlyArray<Tool> = [
       const surfaceId = stringArg(args, 'surfaceId');
 
       if (!surfaceId) return text('surfaceId is required', true);
-      const query = new URLSearchParams({ surface: surfaceId, wait: String(READ_WAIT_MS), after: String(Date.now() - 1500) });
+      const query = new URLSearchParams({ surface: surfaceId, wait: String(READ_WAIT_MS), after: String(Date.now() - 1500), sinceAction: '1' });
       const { frame } = (await (await relay(`/frame?${query}`)).json()) as { readonly frame: PanelFrame | null };
 
       return frame ? frameContent(frame) : text('no frame arrived from the Mac in time', true);

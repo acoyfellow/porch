@@ -12,6 +12,32 @@ const FRAME_WIDTH = 900;
 const FRAME_QUALITY = 62;
 const SCROLL_SCALE = 1;
 
+export type PinnedViewport = { readonly width: number; readonly height: number };
+
+const MIN_VIEWPORT = 240;
+const MAX_VIEWPORT = 1600;
+
+export const clampViewport = (viewport: PinnedViewport): PinnedViewport => ({
+  width: Math.round(Math.min(MAX_VIEWPORT, Math.max(MIN_VIEWPORT, viewport.width))),
+  height: Math.round(Math.min(MAX_VIEWPORT * 2, Math.max(MIN_VIEWPORT, viewport.height))),
+});
+
+export const pinViewport = async (surfaceId: string, viewport: PinnedViewport): Promise<void> => {
+  const size = clampViewport(viewport);
+  await rpc('browser.viewport.set', { surface_id: surfaceId, width: size.width, height: size.height });
+};
+
+export const resetViewport = async (surfaceId: string): Promise<void> => {
+  await run(CMUX, ['browser', '--surface', surfaceId, 'viewport', 'reset'], { timeout: TIMEOUT_MS, encoding: 'utf8' });
+};
+
+export const matchesViewport = (page: { readonly width: number; readonly height: number }, viewport: PinnedViewport | null): boolean => {
+  if (!viewport) return true;
+  const size = clampViewport(viewport);
+
+  return Math.abs(page.width - size.width) <= 2 && Math.abs(page.height - size.height) <= 2;
+};
+
 export type BrowserScreen = { readonly image: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string; readonly digest: string };
 
 const rpc = async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
@@ -28,11 +54,27 @@ const PAGE_INFO = '({ width: innerWidth, height: innerHeight, url: location.href
 
 const digestOf = (bytes: Uint8Array): string => new Bun.CryptoHasher('sha1').update(bytes).digest('hex');
 
-export const captureScreen = async (surfaceId: string): Promise<BrowserScreen> => {
-  const [shot, page] = await Promise.all([rpc<{ readonly png_base64: string }>('browser.screenshot', { surface_id: surfaceId }), evaluate<PageInfo>(surfaceId, PAGE_INFO)]);
-  const jpeg = await sharp(Buffer.from(shot.png_base64, 'base64')).resize({ width: FRAME_WIDTH, withoutEnlargement: true }).jpeg({ quality: FRAME_QUALITY, mozjpeg: true }).toBuffer();
+export class UnstableFrame extends Error {}
 
-  return { image: `data:image/jpeg;base64,${jpeg.toString('base64')}`, width: page.width, height: page.height, url: page.url, title: page.title, digest: digestOf(jpeg) };
+const ASPECT_TOLERANCE = 0.04;
+
+const sameSize = (a: PageInfo, b: PageInfo) => a.width === b.width && a.height === b.height;
+
+export const captureScreen = async (surfaceId: string, viewport: PinnedViewport | null): Promise<BrowserScreen> => {
+  const before = await evaluate<PageInfo>(surfaceId, PAGE_INFO);
+  const shot = await rpc<{ readonly png_base64: string }>('browser.screenshot', { surface_id: surfaceId });
+  const after = await evaluate<PageInfo>(surfaceId, PAGE_INFO);
+
+  if (!sameSize(before, after) || !matchesViewport(after, viewport)) throw new UnstableFrame(`page ${after.width}x${after.height} is not the pinned viewport`);
+  const png = sharp(Buffer.from(shot.png_base64, 'base64'));
+  const meta = await png.metadata();
+  const pngAspect = (meta.width ?? 0) / Math.max(1, meta.height ?? 1);
+  const pageAspect = after.width / Math.max(1, after.height);
+
+  if (Math.abs(pngAspect - pageAspect) / pageAspect > ASPECT_TOLERANCE) throw new UnstableFrame(`screenshot ${meta.width}x${meta.height} does not match page ${after.width}x${after.height}`);
+  const jpeg = await png.resize({ width: Math.min(FRAME_WIDTH, Math.max(after.width * 2, 1)), withoutEnlargement: true }).jpeg({ quality: FRAME_QUALITY, mozjpeg: true }).toBuffer();
+
+  return { image: `data:image/jpeg;base64,${jpeg.toString('base64')}`, width: after.width, height: after.height, url: after.url, title: after.title, digest: digestOf(jpeg) };
 };
 
 const tapScript = (x: number, y: number) => `(() => {

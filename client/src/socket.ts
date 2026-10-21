@@ -11,10 +11,25 @@ const sendNow = (message: PhoneToRelay) => {
   if (current?.readyState === WebSocket.OPEN) current.send(JSON.stringify(message));
 };
 
+const BROWSER_BAR_PX = 120;
+
+const phoneViewport = () => ({ width: Math.round(globalThis.innerWidth), height: Math.max(240, Math.round(globalThis.innerHeight - BROWSER_BAR_PX)) });
+
+const openMessage = (surfaceId: string | null): PhoneToRelay => ({ _tag: 'Open', surfaceId, ...(surfaceId ? { viewport: phoneViewport() } : {}) });
+
 export const openSurface = (surfaceId: string | null) => {
   wanted = surfaceId;
-  sendNow({ _tag: 'Open', surfaceId });
+  sendNow(openMessage(surfaceId));
 };
+
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+globalThis.addEventListener?.('resize', () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (wanted) sendNow(openMessage(wanted));
+  }, 400);
+});
 
 export const sendBrowser = (surfaceId: string, input: BrowserInput) => sendNow({ _tag: 'Browser', surfaceId, input });
 
@@ -32,7 +47,7 @@ export const phoneSocket: Stream.Stream<Message> = Stream.callback<Message>((que
       current = socket;
       socket.onopen = () => {
         Queue.offerUnsafe(queue, Message.SocketOpened());
-        sendNow({ _tag: 'Open', surfaceId: wanted });
+        sendNow(openMessage(wanted));
       };
       socket.onmessage = (event: MessageEvent<string>) => {
         Option.map(decode(event.data), (message) => Queue.offerUnsafe(queue, Message.Received({ message })));

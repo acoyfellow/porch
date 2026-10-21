@@ -221,6 +221,26 @@ const outgoingView = (h: H, outgoing: Outgoing): Html =>
     [outgoing.text, h.div([h.Class('mt-1 text-[11px] text-zinc-500')], [outgoing.state === 'failed' ? `Not sent: ${outgoing.reason ?? 'unknown error'}` : outgoing.state === 'sending' ? 'Sending to your Mac…' : 'Delivered to your Mac'])],
   );
 
+type FilePanel = Extract<Model['panel'], { readonly _tag: 'File' }>;
+
+const sizeLabel = (bytes: number): string => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+const fileMedia = (h: H, panel: FilePanel): Html => {
+  if (panel.mime.startsWith('image/')) return h.img([h.Id('file-media'), h.Src(panel.mediaUrl), h.Alt(panel.name), h.Class('mx-auto block max-h-[75dvh] w-auto max-w-full')]);
+
+  if (panel.mime.startsWith('video/')) return h.video([h.Id('file-media'), h.Src(panel.mediaUrl), h.Controls(true), h.Attribute('playsinline', ''), h.Attribute('preload', 'metadata'), h.Class('mx-auto block max-h-[75dvh] w-full bg-black')], []);
+
+  if (panel.mime.startsWith('audio/')) return h.audio([h.Id('file-media'), h.Src(panel.mediaUrl), h.Controls(true), h.Class('w-full')], []);
+
+  return h.a([h.Id('file-media'), h.Href(panel.mediaUrl), h.Class('block rounded-xl border border-zinc-700 p-4 text-center text-sky-300')], [`Open ${panel.name}`]);
+};
+
+const fileView = (h: H, panel: FilePanel): Html =>
+  h.div(
+    [h.DataAttribute('panel', 'file'), h.DataAttribute('mime', panel.mime), h.Class('flex flex-col gap-3 p-3')],
+    [fileMedia(h, panel), h.p([h.Class('text-center font-mono text-xs text-zinc-500')], [`${panel.name} · ${sizeLabel(panel.size)}`])],
+  );
+
 type ScreenPanel = Extract<Model['panel'], { readonly _tag: 'Screen' }>;
 
 const pagePoint = (panel: ScreenPanel, clientX: number, clientY: number) => {
@@ -309,6 +329,13 @@ const panelBody = (h: H, model: Model): Html => {
       return h.p([h.Class('p-6 text-sm text-zinc-400'), h.DataAttribute('panel', 'waiting')], [model.machineOnline ? 'Connecting to the live view…' : 'Your Mac is offline. The live view starts when it reconnects.']);
     case 'Screen':
       return screenView(h, panel);
+    case 'File':
+      return fileView(h, panel);
+    case 'Unsupported':
+      return h.div(
+        [h.Class('flex flex-col items-center gap-3 p-8 text-center'), h.DataAttribute('panel', 'unsupported')],
+        [h.p([h.Class('text-sm text-zinc-300')], [panel.reason]), h.p([h.Class('text-xs text-zinc-500')], ['It is still open on your Mac.'])],
+      );
     case 'Gone':
       return h.p([h.Class('p-6 text-sm text-zinc-400'), h.DataAttribute('panel', 'gone')], [panel.reason]);
     case 'Text':

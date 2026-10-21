@@ -83,6 +83,10 @@ const route = async (request: Request, env: Env, caller: Caller): Promise<Respon
 
   if (pathname === '/daemon') return isDaemon(caller, env) ? forward(request, env, '/daemon') : new Response('forbidden', { status: 403 });
 
+  if (pathname === '/api/media') return isMcpClient(caller, env) ? forward(request, env, '/media') : new Response('forbidden', { status: 403 });
+
+  if (pathname === '/phone' && !isOwner(caller, env) && isMcpClient(caller, env)) return forward(request, env, '/phone-watch');
+
   if (pathname === '/mcp') return isMcpClient(caller, env) ? handleMcp(request, relayCall(request, env)) : new Response('forbidden', { status: 403 });
 
   if (!isOwner(caller, env)) return new Response('forbidden', { status: 403 });

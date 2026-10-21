@@ -1,9 +1,10 @@
 import { hostname } from 'node:os';
 import { Schema } from 'effect';
-import { type DaemonToRelay, type PanelFrame, type PiEntry, RelayToDaemon, type Sidebar } from '../shared/protocol';
-import { applyInput, captureScreen } from './browser';
+import { type DaemonToRelay, type PanelFrame, type PiEntry, RelayToDaemon, type Sidebar, type Surface } from '../shared/protocol';
+import { applyInput, captureScreen, type PinnedViewport, pinViewport, resetViewport, UnstableFrame } from './browser';
 import { readScreen, readSidebar, sendKey, sendText } from './cmux';
 import { loadConfig } from './config';
+import { fileInfo, isStreamable, readChunk } from './files';
 import { openTail, piLinks, readNew, sessionFile, type Tail } from './pi';
 
 const SIDEBAR_EVERY_MS = 2000;
@@ -14,7 +15,9 @@ const VERSION = '0.0.1';
 
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(RelayToDaemon));
 
-type Watch = { readonly surfaceId: string; kind: 'pi' | 'text' | 'screen'; tail: Tail | null; sessionId: string | null; lastText: string; capturing: boolean; stopped: boolean };
+type WatchKind = 'pi' | 'text' | 'screen' | 'file' | 'unsupported';
+
+type Watch = { readonly surfaceId: string; kind: WatchKind; tail: Tail | null; sessionId: string | null; lastText: string; capturing: boolean; stopped: boolean; viewport: PinnedViewport | null; pinned: string; everPinned: boolean };
 
 const config = await loadConfig();
 const watches = new Map<string, Watch>();
@@ -33,9 +36,45 @@ const surfaceOf = (surfaceId: string) => sidebar?.workspaces.flatMap((workspace)
 
 const frame = (value: PanelFrame) => send({ _tag: 'Frame', frame: value });
 
-const startWatch = async (surfaceId: string): Promise<Watch> => {
+const kindOfSurface = (surface: Surface | null): WatchKind => {
+  if (surface?.pi) return 'pi';
+
+  if (surface?.kind === 'browser') return 'screen';
+
+  if (surface?.kind === 'file') return 'file';
+
+  if (surface?.kind === 'terminal' || surface === null) return 'text';
+
+  return 'unsupported';
+};
+
+const sendFileFrame = async (watch: Watch, surface: Surface | null) => {
+  const path = surface?.filePath;
+
+  if (!path) return frame({ _tag: 'Unsupported', surfaceId: watch.surfaceId, reason: 'cmux did not report a file path for this panel' });
+  const info = await fileInfo(path).catch(() => null);
+
+  if (!info) return frame({ _tag: 'Unsupported', surfaceId: watch.surfaceId, reason: `${surface?.title ?? 'this file'} is no longer on your Mac` });
+
+  if (!isStreamable(info.mime)) return frame({ _tag: 'Unsupported', surfaceId: watch.surfaceId, reason: `${info.name} (${info.mime}) cannot be shown on your phone yet` });
+  frame({ _tag: 'File', surfaceId: watch.surfaceId, name: info.name, mime: info.mime, size: info.size, mediaUrl: `/api/media?surface=${encodeURIComponent(watch.surfaceId)}` });
+};
+
+const startWatch = async (surfaceId: string, viewport: PinnedViewport | null): Promise<Watch> => {
   const surface = surfaceOf(surfaceId);
-  const watch: Watch = { surfaceId, kind: surface?.pi ? 'pi' : surface?.kind === 'browser' ? 'screen' : 'text', tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '', capturing: false, stopped: false };
+  const watch: Watch = { surfaceId, kind: kindOfSurface(surface), tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '', capturing: false, stopped: false, viewport, pinned: '', everPinned: false };
+
+  if (watch.kind === 'file') {
+    await sendFileFrame(watch, surface);
+
+    return watch;
+  }
+
+  if (watch.kind === 'unsupported') {
+    frame({ _tag: 'Unsupported', surfaceId, reason: `${surface?.title || 'This panel'} is a ${surface?.kind ?? 'panel'} that porch cannot show yet` });
+
+    return watch;
+  }
 
   if (watch.kind === 'pi' && watch.sessionId) {
     const path = await sessionFile(watch.sessionId);
@@ -61,11 +100,24 @@ const streamScreen = async (watch: Watch) => {
 
   try {
     while (!watch.stopped && socket?.readyState === WebSocket.OPEN) {
-      const screen = await captureScreen(watch.surfaceId).catch((error) => {
-        log('screen failed', watch.surfaceId, error instanceof Error ? error.message.slice(0, 160) : error);
+      const pinKey = watch.viewport ? `${watch.viewport.width}x${watch.viewport.height}` : '';
 
-        return null;
+      if (watch.viewport && watch.pinned !== pinKey) {
+        await pinViewport(watch.surfaceId, watch.viewport).catch((error) => log('pin failed', watch.surfaceId, error instanceof Error ? error.message.slice(0, 160) : error));
+        watch.pinned = pinKey;
+        watch.everPinned = true;
+      }
+      const screen = await captureScreen(watch.surfaceId, watch.viewport).catch((error) => {
+        if (!(error instanceof UnstableFrame)) log('screen failed', watch.surfaceId, error instanceof Error ? error.message.slice(0, 160) : error);
+
+        return error instanceof UnstableFrame ? 'unstable' : null;
       });
+
+      if (screen === 'unstable') {
+        watch.pinned = '';
+        await Bun.sleep(SCREEN_IDLE_MS);
+        continue;
+      }
 
       if (screen && screen.digest !== watch.lastText) {
         watch.lastText = screen.digest;
@@ -75,6 +127,8 @@ const streamScreen = async (watch: Watch) => {
     }
   } finally {
     watch.capturing = false;
+
+    if (watch.stopped && watch.everPinned) await resetViewport(watch.surfaceId).catch(() => undefined);
   }
 };
 
@@ -83,7 +137,13 @@ const pollWatch = async (watch: Watch) => {
 
   if (sidebar && !surface) return frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
 
-  if (watch.kind === 'text' && surface?.kind === 'browser') watch.kind = 'screen';
+  if (watch.kind === 'text' && surface && kindOfSurface(surface) !== 'text') {
+    watch.kind = kindOfSurface(surface);
+
+    if (watch.kind === 'file') return sendFileFrame(watch, surface);
+  }
+
+  if (watch.kind === 'file' || watch.kind === 'unsupported') return;
 
   if (watch.kind === 'screen') {
     void streamScreen(watch);
@@ -105,19 +165,67 @@ const pollWatch = async (watch: Watch) => {
   frame({ _tag: 'Text', surfaceId: watch.surfaceId, text });
 };
 
-const setWatches = async (surfaceIds: ReadonlyArray<string>, refresh: ReadonlyArray<string>) => {
+type ViewportRequest = { readonly surfaceId: string; readonly width: number; readonly height: number };
+
+const stopWatch = (watch: Watch) => {
+  watch.stopped = true;
+
+  if (watch.kind === 'screen' && watch.everPinned && !watch.capturing) void resetViewport(watch.surfaceId).catch(() => undefined);
+};
+
+const setWatches = async (surfaceIds: ReadonlyArray<string>, refresh: ReadonlyArray<string>, viewports: ReadonlyArray<ViewportRequest>) => {
+  const viewportOf = (id: string): PinnedViewport | null => {
+    const found = viewports.find((each) => each.surfaceId === id);
+
+    return found ? { width: found.width, height: found.height } : null;
+  };
+
   for (const [id, watch] of [...watches]) {
     if (surfaceIds.includes(id)) continue;
-    watch.stopped = true;
+    stopWatch(watch);
     watches.delete(id);
   }
 
-  for (const id of surfaceIds) if (!watches.has(id)) watches.set(id, await startWatch(id));
+  for (const id of surfaceIds) {
+    const existing = watches.get(id);
+
+    if (!existing) {
+      watches.set(id, await startWatch(id, viewportOf(id)));
+      continue;
+    }
+    const viewport = viewportOf(id);
+
+    if (viewport && (existing.viewport?.width !== viewport.width || existing.viewport?.height !== viewport.height)) existing.viewport = viewport;
+  }
 
   for (const id of refresh) {
     const watch = watches.get(id);
 
-    if (watch) watch.lastText = '';
+    if (!watch) continue;
+    watch.lastText = '';
+
+    if (watch.kind === 'file') void sendFileFrame(watch, surfaceOf(id));
+
+    if (watch.kind === 'unsupported') frame({ _tag: 'Unsupported', surfaceId: id, reason: 'porch cannot show this panel yet' });
+  }
+};
+
+const MEDIA_CHUNK_LIMIT = 1024 * 1024;
+
+const serveMedia = async (requestId: string, surfaceId: string, start: number, end: number | null) => {
+  const path = surfaceOf(surfaceId)?.filePath;
+  const fail = () => send({ _tag: 'MediaChunk', requestId, ok: false, start: 0, end: 0, total: 0, mime: '', data: '' });
+
+  if (!path) return fail();
+
+  try {
+    const info = await fileInfo(path);
+
+    if (!isStreamable(info.mime)) return fail();
+    const chunk = await readChunk(path, start, end === null ? Math.min(info.size - 1, start + MEDIA_CHUNK_LIMIT - 1) : end);
+    send({ _tag: 'MediaChunk', requestId, ok: true, start: chunk.start, end: chunk.end, total: chunk.total, mime: info.mime, data: Buffer.from(chunk.bytes).toString('base64') });
+  } catch {
+    fail();
   }
 };
 
@@ -136,7 +244,9 @@ const onMessage = async (raw: string) => {
   if (decoded._tag === 'None') return;
   const message = decoded.value;
 
-  if (message._tag === 'Watch') return setWatches(message.surfaceIds, message.refresh ?? []);
+  if (message._tag === 'Watch') return setWatches(message.surfaceIds, message.refresh ?? [], message.viewports ?? []);
+
+  if (message._tag === 'MediaRequest') return serveMedia(message.requestId, message.surfaceId, message.start, message.end);
 
   if (message._tag === 'Browser') {
     if (surfaceOf(message.surfaceId)?.kind === 'browser') void inOrder(message.surfaceId, () => applyInput(message.surfaceId, message.input));
@@ -189,7 +299,7 @@ const connect = () => {
   next.addEventListener('message', (event) => void onMessage(String(event.data)));
   next.addEventListener('close', (event) => {
     log('disconnected', event.code, event.reason, `retry in ${backoff}ms`);
-    for (const watch of watches.values()) watch.stopped = true;
+    for (const watch of watches.values()) stopWatch(watch);
     watches.clear();
     setTimeout(connect, backoff);
     backoff = Math.min(MAX_BACKOFF_MS, backoff * 2);

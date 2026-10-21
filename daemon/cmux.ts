@@ -16,7 +16,7 @@ export const rpc = async (method: string, params: Record<string, unknown>): Prom
   return JSON.parse(stdout);
 };
 
-type RawSurface = { readonly surface_id?: string; readonly title?: string; readonly kind?: string; readonly is_focused?: boolean };
+type RawSurface = { readonly surface_id?: string; readonly title?: string; readonly kind?: string; readonly is_focused?: boolean; readonly file_path?: string | null };
 
 type RawWorkspace = {
   readonly id?: string;
@@ -56,7 +56,7 @@ const kindOf = (raw: string | undefined): SurfaceKind => (raw ? (KINDS.get(raw) 
 const surfaceOf = (raw: RawSurface, pi: ReadonlyMap<string, PiLink>): Surface => {
   const id = raw.surface_id ?? '';
 
-  return { id, title: raw.title ?? '', kind: kindOf(raw.kind), focused: raw.is_focused === true, pi: pi.get(id.toUpperCase()) ?? null };
+  return { id, title: raw.title ?? '', kind: kindOf(raw.kind), focused: raw.is_focused === true, pi: pi.get(id.toUpperCase()) ?? null, filePath: raw.file_path ?? null };
 };
 
 const workspaceOf = (raw: RawWorkspace, pi: ReadonlyMap<string, PiLink>): Workspace => ({

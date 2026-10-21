@@ -10,6 +10,8 @@ export const Panel = Schema.Union([
   Schema.TaggedStruct('Pi', { status: Schema.String, entries: Schema.Array(PiEntry) }),
   Schema.TaggedStruct('Text', { text: Schema.String }),
   Schema.TaggedStruct('Gone', { reason: Schema.String }),
+  Schema.TaggedStruct('File', { name: Schema.String, mime: Schema.String, size: Schema.Number, mediaUrl: Schema.String }),
+  Schema.TaggedStruct('Unsupported', { reason: Schema.String }),
   Schema.TaggedStruct('Screen', { image: Schema.String, width: Schema.Number, height: Schema.Number, url: Schema.String, title: Schema.String, at: Schema.Number }),
 ]);
 

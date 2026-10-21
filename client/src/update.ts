@@ -24,6 +24,10 @@ export const panelAfter = (panel: Panel, frame: PanelFrame): Panel => {
       return { _tag: 'Text', text: frame.text };
     case 'Gone':
       return { _tag: 'Gone', reason: frame.reason };
+    case 'File':
+      return { _tag: 'File', name: frame.name, mime: frame.mime, size: frame.size, mediaUrl: frame.mediaUrl };
+    case 'Unsupported':
+      return { _tag: 'Unsupported', reason: frame.reason };
     case 'Screen':
       return { _tag: 'Screen', image: frame.image, width: frame.width, height: frame.height, url: frame.url, title: frame.title, at: frame.at };
   }

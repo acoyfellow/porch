@@ -63,8 +63,12 @@ try {
   if (terminal) {
     const nonce = `porch-mcp-${crypto.randomUUID().slice(0, 8)}`;
     const sent = await call('send_text', { surfaceId: terminal, text: `echo ${nonce}` });
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    const screen = cmux(['read-screen', '--surface', terminal, '--lines', '20']);
+    let screen = '';
+
+    for (let attempt = 0; attempt < 16 && screen.split(nonce).length <= 2; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      screen = cmux(['read-screen', '--surface', terminal, '--lines', '20']);
+    }
     check('send_text lands in a cmux terminal', !sent.isError && screen.split(nonce).length > 2, nonce);
     const read = textOf(await call('read_surface', { surfaceId: terminal }));
     check('read_surface returns terminal text', read.includes(nonce), `${read.length} chars`);
