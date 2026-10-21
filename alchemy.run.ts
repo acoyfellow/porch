@@ -16,6 +16,8 @@ export default Alchemy.Stack(
 
     const daemonToken = yield* Cloudflare.Access.ServiceToken('daemon-token', { name: `porch daemon (${domain})`, duration: '8760h' });
 
+    const mcpToken = yield* Cloudflare.Access.ServiceToken('mcp-token', { name: `porch mcp (${domain})`, duration: '8760h' });
+
     const app = yield* Cloudflare.Access.Application('access', {
       type: 'self_hosted',
       name: `porch (${domain})`,
@@ -25,6 +27,7 @@ export default Alchemy.Stack(
       policies: [
         { name: 'owner', decision: 'allow', include: [{ email: owner }] },
         { name: 'daemon', decision: 'non_identity', include: [{ serviceToken: daemonToken.serviceTokenId }] },
+        { name: 'mcp', decision: 'non_identity', include: [{ serviceToken: mcpToken.serviceTokenId }] },
       ],
     });
 
@@ -41,9 +44,10 @@ export default Alchemy.Stack(
         ACCESS_AUD: app.aud,
         OWNER_EMAIL: owner,
         DAEMON_TOKEN_ID: daemonToken.clientId,
+        MCP_TOKEN_ID: mcpToken.clientId,
       },
     });
 
-    return { url: worker.url, aud: app.aud, daemonClientId: daemonToken.clientId, daemonClientSecret: daemonToken.clientSecret };
+    return { url: worker.url, aud: app.aud, daemonClientId: daemonToken.clientId, daemonClientSecret: daemonToken.clientSecret, mcpClientId: mcpToken.clientId, mcpClientSecret: mcpToken.clientSecret };
   }),
 );

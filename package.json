@@ -10,11 +10,15 @@
     "test": "vitest run",
     "build": "vite build client",
     "deploy": "vite build client && alchemy deploy",
-    "daemon": "bun daemon/main.ts"
+    "daemon": "bun daemon/main.ts",
+    "brand": "bun brand/build.ts",
+    "dev": "vite build client && ../predict/node_modules/.bin/wrangler dev -c wrangler.dev.jsonc --port 8790 --ip 127.0.0.1",
+    "daemon:dev": "PORCH_ORIGIN=http://127.0.0.1:8790 PORCH_CLIENT_ID=dev PORCH_CLIENT_SECRET=dev bun daemon/main.ts"
   },
   "dependencies": {
     "effect": "4.0.0",
-    "foldkit": "0.166.0"
+    "foldkit": "0.166.0",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

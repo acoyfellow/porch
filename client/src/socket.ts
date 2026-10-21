@@ -1,5 +1,5 @@
 import { Effect, Option, Queue, Schema, Stream } from 'effect';
-import { type PhoneToRelay, RelayToPhone } from '../../shared/protocol';
+import { type BrowserInput, type PhoneToRelay, RelayToPhone } from '../../shared/protocol';
 import { Message } from './message';
 
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(RelayToPhone));
@@ -15,6 +15,8 @@ export const openSurface = (surfaceId: string | null) => {
   wanted = surfaceId;
   sendNow({ _tag: 'Open', surfaceId });
 };
+
+export const sendBrowser = (surfaceId: string, input: BrowserInput) => sendNow({ _tag: 'Browser', surfaceId, input });
 
 const socketUrl = () => {
   const url = new URL('/phone', globalThis.location.href);

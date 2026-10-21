@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { Schema } from 'effect';
-import { DaemonToRelay, MAX_SEND_LENGTH, type PanelFrame, PhoneToRelay, type RelayToDaemon, type RelayToPhone, type Sidebar } from '../shared/protocol';
+import { AllowedKey, BrowserInput, DaemonToRelay, MAX_SEND_LENGTH, type PanelFrame, PhoneToRelay, type RelayToDaemon, type RelayToPhone, type Sidebar } from '../shared/protocol';
 
 const DAEMON_TAG = 'daemon';
 const PHONE_TAG = 'phone';
@@ -26,6 +26,7 @@ export class Relay extends DurableObject {
   private readonly pendingSends = new Map<string, (result: { ok: boolean; reason: string | null }) => void>();
   private readonly frames = new Map<string, PanelFrame>();
   private readonly httpWatch = new Map<string, number>();
+  private readonly frameTimes = new Map<string, number>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -43,6 +44,8 @@ export class Relay extends DurableObject {
     if (url.pathname === '/frame') return this.frameFromHttp(url);
 
     if (url.pathname === '/key' && request.method === 'POST') return this.keyFromHttp(request);
+
+    if (url.pathname === '/browser' && request.method === 'POST') return this.browserFromHttp(request);
 
     return new Response('not found', { status: 404 });
   }
@@ -106,8 +109,8 @@ export class Relay extends DurableObject {
     return [...new Set([...open, ...polled, ...extra])];
   }
 
-  private rewatch(extra: ReadonlyArray<string> = []) {
-    this.toDaemon({ _tag: 'Watch', surfaceIds: [...this.watched(extra)] });
+  private rewatch(extra: ReadonlyArray<string> = [], refresh: ReadonlyArray<string> = []) {
+    this.toDaemon({ _tag: 'Watch', surfaceIds: [...this.watched(extra)], refresh: [...refresh] });
   }
 
   async webSocketMessage(socket: WebSocket, raw: string | ArrayBuffer) {
@@ -140,6 +143,7 @@ export class Relay extends DurableObject {
         return;
       case 'Frame':
         this.frames.set(message.frame.surfaceId, message.frame);
+        this.frameTimes.set(message.frame.surfaceId, Date.now());
         this.broadcast({ _tag: 'Frame', frame: message.frame }, message.frame.surfaceId);
 
         return;
@@ -168,6 +172,12 @@ export class Relay extends DurableObject {
       return;
     }
 
+    if (message._tag === 'Browser') {
+      this.toDaemon({ _tag: 'Browser', surfaceId: message.surfaceId, input: message.input });
+
+      return;
+    }
+
     if (message.text.length > MAX_SEND_LENGTH) return this.toPhone(socket, { _tag: 'Sent', requestId: message.requestId, ok: false, reason: 'message too long' });
 
     if (!this.toDaemon({ _tag: 'Send', requestId: message.requestId, surfaceId: message.surfaceId, text: message.text, submit: message.submit })) this.toPhone(socket, { _tag: 'Sent', requestId: message.requestId, ok: false, reason: 'your Mac is offline' });
@@ -191,24 +201,35 @@ export class Relay extends DurableObject {
   private async keyFromHttp(request: Request): Promise<Response> {
     const body = (await request.json()) as { surfaceId?: string; key?: string };
 
-    if (typeof body.surfaceId !== 'string' || body.key !== 'Escape') return Response.json({ ok: false, reason: 'bad request' }, { status: 400 });
+    const key = Schema.decodeUnknownOption(AllowedKey)(body.key);
 
-    return this.toDaemon({ _tag: 'Key', surfaceId: body.surfaceId, key: body.key }) ? Response.json({ ok: true }) : Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
+    if (typeof body.surfaceId !== 'string' || key._tag === 'None') return Response.json({ ok: false, reason: 'bad request' }, { status: 400 });
+
+    return this.toDaemon({ _tag: 'Key', surfaceId: body.surfaceId, key: key.value }) ? Response.json({ ok: true }) : Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
+  }
+
+  private async browserFromHttp(request: Request): Promise<Response> {
+    const body = (await request.json()) as { surfaceId?: unknown; input?: unknown };
+    const input = Schema.decodeUnknownOption(BrowserInput)(body.input);
+
+    if (typeof body.surfaceId !== 'string' || input._tag === 'None') return Response.json({ ok: false, reason: 'bad request' }, { status: 400 });
+
+    return this.toDaemon({ _tag: 'Browser', surfaceId: body.surfaceId, input: input.value }) ? Response.json({ ok: true }) : Response.json({ ok: false, reason: 'your Mac is offline' }, { status: 503 });
   }
 
   private async frameFromHttp(url: URL): Promise<Response> {
     const surfaceId = url.searchParams.get('surface');
 
     if (!surfaceId) return Response.json({ frame: null }, { status: 400 });
-    const after = Number(url.searchParams.get('wait') ?? '0');
+    const wait = Number(url.searchParams.get('wait') ?? '0');
+    const newerThan = Number(url.searchParams.get('after') ?? '0');
 
-    const known = this.httpWatch.has(surfaceId);
     this.httpWatch.set(surfaceId, Date.now() + HTTP_WATCH_MS);
+    this.rewatch([], newerThan > 0 ? [surfaceId] : []);
+    const deadline = Date.now() + Math.min(wait, 15_000);
+    const fresh = () => (this.frameTimes.get(surfaceId) ?? 0) > newerThan;
 
-    if (!known) this.rewatch();
-    const deadline = Date.now() + Math.min(after, 15_000);
-
-    while (!this.frames.has(surfaceId) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
+    while (!fresh() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
 
     return Response.json({ frame: this.frames.get(surfaceId) ?? null });
   }

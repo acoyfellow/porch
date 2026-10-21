@@ -1,6 +1,6 @@
 import { Schema } from 'effect';
 import { defineMessageUnion } from 'foldkit/message';
-import { RelayToPhone } from '../../shared/protocol';
+import { BrowserInput, RelayToPhone } from '../../shared/protocol';
 
 export const Message = defineMessageUnion({
   SocketOpened: {},
@@ -21,6 +21,12 @@ export const Message = defineMessageUnion({
   ClickedJumpToLatest: {},
   ClickedReconnect: {},
   CompletedEffect: {},
+  PressedScreen: { screenX: Schema.Number, screenY: Schema.Number, pageX: Schema.Number, pageY: Schema.Number, scale: Schema.Number },
+  ReleasedScreen: { screenX: Schema.Number, screenY: Schema.Number },
+  SentBrowser: { input: BrowserInput },
+  UpdatedAddress: { value: Schema.String },
+  FocusedAddress: {},
+  SubmittedAddress: {},
 });
 
 export type Message = typeof Message.Type;

@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import { Schema } from 'effect';
 import { type DaemonToRelay, type PanelFrame, type PiEntry, RelayToDaemon, type Sidebar } from '../shared/protocol';
+import { applyInput, captureScreen } from './browser';
 import { readScreen, readSidebar, sendKey, sendText } from './cmux';
 import { loadConfig } from './config';
 import { openTail, piLinks, readNew, sessionFile, type Tail } from './pi';
@@ -13,7 +14,7 @@ const VERSION = '0.0.1';
 
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(RelayToDaemon));
 
-type Watch = { readonly surfaceId: string; kind: 'pi' | 'text'; tail: Tail | null; sessionId: string | null; lastText: string };
+type Watch = { readonly surfaceId: string; kind: 'pi' | 'text' | 'screen'; tail: Tail | null; sessionId: string | null; lastText: string; capturing: boolean; stopped: boolean };
 
 const config = await loadConfig();
 const watches = new Map<string, Watch>();
@@ -34,7 +35,7 @@ const frame = (value: PanelFrame) => send({ _tag: 'Frame', frame: value });
 
 const startWatch = async (surfaceId: string): Promise<Watch> => {
   const surface = surfaceOf(surfaceId);
-  const watch: Watch = { surfaceId, kind: surface?.pi ? 'pi' : 'text', tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '' };
+  const watch: Watch = { surfaceId, kind: surface?.pi ? 'pi' : surface?.kind === 'browser' ? 'screen' : 'text', tail: null, sessionId: surface?.pi?.sessionId ?? null, lastText: '', capturing: false, stopped: false };
 
   if (watch.kind === 'pi' && watch.sessionId) {
     const path = await sessionFile(watch.sessionId);
@@ -52,10 +53,43 @@ const startWatch = async (surfaceId: string): Promise<Watch> => {
   return watch;
 };
 
+const SCREEN_IDLE_MS = 150;
+
+const streamScreen = async (watch: Watch) => {
+  if (watch.capturing) return;
+  watch.capturing = true;
+
+  try {
+    while (!watch.stopped && socket?.readyState === WebSocket.OPEN) {
+      const screen = await captureScreen(watch.surfaceId).catch((error) => {
+        log('screen failed', watch.surfaceId, error instanceof Error ? error.message.slice(0, 160) : error);
+
+        return null;
+      });
+
+      if (screen && screen.digest !== watch.lastText) {
+        watch.lastText = screen.digest;
+        frame({ _tag: 'Screen', surfaceId: watch.surfaceId, image: screen.image, width: screen.width, height: screen.height, url: screen.url, title: screen.title, at: Date.now() });
+      }
+      await Bun.sleep(screen ? SCREEN_IDLE_MS : 2000);
+    }
+  } finally {
+    watch.capturing = false;
+  }
+};
+
 const pollWatch = async (watch: Watch) => {
   const surface = surfaceOf(watch.surfaceId);
 
   if (sidebar && !surface) return frame({ _tag: 'Gone', surfaceId: watch.surfaceId, reason: 'this panel was closed on your Mac' });
+
+  if (watch.kind === 'text' && surface?.kind === 'browser') watch.kind = 'screen';
+
+  if (watch.kind === 'screen') {
+    void streamScreen(watch);
+
+    return;
+  }
 
   if (watch.kind === 'pi' && watch.tail) {
     const entries: ReadonlyArray<PiEntry> = await readNew(watch.tail);
@@ -71,10 +105,29 @@ const pollWatch = async (watch: Watch) => {
   frame({ _tag: 'Text', surfaceId: watch.surfaceId, text });
 };
 
-const setWatches = async (surfaceIds: ReadonlyArray<string>) => {
-  for (const id of [...watches.keys()]) if (!surfaceIds.includes(id)) watches.delete(id);
+const setWatches = async (surfaceIds: ReadonlyArray<string>, refresh: ReadonlyArray<string>) => {
+  for (const [id, watch] of [...watches]) {
+    if (surfaceIds.includes(id)) continue;
+    watch.stopped = true;
+    watches.delete(id);
+  }
 
   for (const id of surfaceIds) if (!watches.has(id)) watches.set(id, await startWatch(id));
+
+  for (const id of refresh) {
+    const watch = watches.get(id);
+
+    if (watch) watch.lastText = '';
+  }
+};
+
+const inputQueues = new Map<string, Promise<void>>();
+
+const inOrder = (surfaceId: string, task: () => Promise<void>): Promise<void> => {
+  const next = (inputQueues.get(surfaceId) ?? Promise.resolve()).then(task).catch((error) => log('browser input failed', error instanceof Error ? error.message.slice(0, 160) : error));
+  inputQueues.set(surfaceId, next);
+
+  return next;
 };
 
 const onMessage = async (raw: string) => {
@@ -83,7 +136,16 @@ const onMessage = async (raw: string) => {
   if (decoded._tag === 'None') return;
   const message = decoded.value;
 
-  if (message._tag === 'Watch') return setWatches(message.surfaceIds);
+  if (message._tag === 'Watch') return setWatches(message.surfaceIds, message.refresh ?? []);
+
+  if (message._tag === 'Browser') {
+    if (surfaceOf(message.surfaceId)?.kind === 'browser') void inOrder(message.surfaceId, () => applyInput(message.surfaceId, message.input));
+    const watch = watches.get(message.surfaceId);
+
+    if (watch) watch.lastText = '';
+
+    return;
+  }
 
   if (message._tag === 'Key') {
     if (surfaceOf(message.surfaceId)) await sendKey(message.surfaceId, message.key).catch((error) => log('key failed', error));
@@ -127,6 +189,7 @@ const connect = () => {
   next.addEventListener('message', (event) => void onMessage(String(event.data)));
   next.addEventListener('close', (event) => {
     log('disconnected', event.code, event.reason, `retry in ${backoff}ms`);
+    for (const watch of watches.values()) watch.stopped = true;
     watches.clear();
     setTimeout(connect, backoff);
     backoff = Math.min(MAX_BACKOFF_MS, backoff * 2);

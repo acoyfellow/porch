@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0b0c0f"/>
+  <rect x="0" y="0" width="1200" height="630" fill="url(#g)"/>
+  <defs><radialGradient id="g" cx="0.8" cy="0.1" r="0.9"><stop offset="0" stop-color="#f59e0b" stop-opacity="0.18"/><stop offset="1" stop-color="#0b0c0f" stop-opacity="0"/></radialGradient></defs>
+  <g transform="translate(96 150) scale(0.62)">
+    <path d="M96 236 256 112l160 124" fill="none" stroke="#e4e4e7" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="150" y="228" width="212" height="148" rx="22" fill="#0b0c0f" stroke="#e4e4e7" stroke-width="24"/>
+    <rect x="180" y="258" width="152" height="88" rx="10" fill="#fbbf24"/>
+    <path d="M206 290l22 16-22 16" fill="none" stroke="#0b0c0f" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M248 324h48" stroke="#0b0c0f" stroke-width="14" stroke-linecap="round"/>
+    <path d="M120 404h272" stroke="#e4e4e7" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <text x="440" y="290" font-family="ui-monospace, Menlo, monospace" font-size="96" font-weight="700" fill="#fafafa">porch</text>
+  <text x="440" y="360" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="36" fill="#a1a1aa">Your cmux, live on your phone.</text>
+  <text x="440" y="410" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="28" fill="#71717a">Behind Cloudflare Access. Outbound-only from your Mac.</text>
+</svg>

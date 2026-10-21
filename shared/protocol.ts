@@ -63,13 +63,27 @@ export const PanelFrame = Schema.Union([
   Schema.TaggedStruct('Pi', { surfaceId: Schema.String, sessionId: Schema.String, status: Schema.String, entries: Schema.Array(PiEntry), reset: Schema.Boolean }),
   Schema.TaggedStruct('Text', { surfaceId: Schema.String, text: Schema.String }),
   Schema.TaggedStruct('Gone', { surfaceId: Schema.String, reason: Schema.String }),
+  Schema.TaggedStruct('Screen', { surfaceId: Schema.String, image: Schema.String, width: Schema.Number, height: Schema.Number, url: Schema.String, title: Schema.String, at: Schema.Number }),
 ]);
 
 export type PanelFrame = typeof PanelFrame.Type;
 
-export const AllowedKey = Schema.Literals(['Escape']);
+export const AllowedKey = Schema.Literals(['Escape', 'Enter', 'Tab', 'ctrl+c', 'Up', 'Down']);
 
 export type AllowedKey = typeof AllowedKey.Type;
+
+export const BrowserInput = Schema.Union([
+  Schema.TaggedStruct('Tap', { x: Schema.Number, y: Schema.Number }),
+  Schema.TaggedStruct('Scroll', { dx: Schema.Number, dy: Schema.Number }),
+  Schema.TaggedStruct('Type', { text: Schema.String }),
+  Schema.TaggedStruct('Press', { key: Schema.Literals(['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) }),
+  Schema.TaggedStruct('Navigate', { url: Schema.String }),
+  Schema.TaggedStruct('Back', {}),
+  Schema.TaggedStruct('Forward', {}),
+  Schema.TaggedStruct('Reload', {}),
+]);
+
+export type BrowserInput = typeof BrowserInput.Type;
 
 export const DaemonToRelay = Schema.Union([
   Schema.TaggedStruct('Hello', { machine: Schema.String, version: Schema.String }),
@@ -81,9 +95,10 @@ export const DaemonToRelay = Schema.Union([
 export type DaemonToRelay = typeof DaemonToRelay.Type;
 
 export const RelayToDaemon = Schema.Union([
-  Schema.TaggedStruct('Watch', { surfaceIds: Schema.Array(Schema.String) }),
+  Schema.TaggedStruct('Watch', { surfaceIds: Schema.Array(Schema.String), refresh: Schema.optional(Schema.Array(Schema.String)) }),
   Schema.TaggedStruct('Send', { requestId: Schema.String, surfaceId: Schema.String, text: Schema.String, submit: Schema.Boolean }),
   Schema.TaggedStruct('Key', { surfaceId: Schema.String, key: AllowedKey }),
+  Schema.TaggedStruct('Browser', { surfaceId: Schema.String, input: BrowserInput }),
 ]);
 
 export type RelayToDaemon = typeof RelayToDaemon.Type;
@@ -100,6 +115,7 @@ export type RelayToPhone = typeof RelayToPhone.Type;
 export const PhoneToRelay = Schema.Union([
   Schema.TaggedStruct('Open', { surfaceId: Schema.NullOr(Schema.String) }),
   Schema.TaggedStruct('Send', { requestId: Schema.String, surfaceId: Schema.String, text: Schema.String, submit: Schema.Boolean }),
+  Schema.TaggedStruct('Browser', { surfaceId: Schema.String, input: BrowserInput }),
 ]);
 
 export type PhoneToRelay = typeof PhoneToRelay.Type;

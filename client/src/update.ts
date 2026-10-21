@@ -1,6 +1,6 @@
 import type { Command } from 'foldkit';
-import type { PanelFrame, PiEntry, RelayToPhone } from '../../shared/protocol';
-import { CopyText, FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendKey, SendText } from './command';
+import type { BrowserInput, PanelFrame, PiEntry, RelayToPhone } from '../../shared/protocol';
+import { CopyText, FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendBrowser, SendKey, SendText } from './command';
 import { storedDraft } from './draft';
 import { Message } from './message';
 import type { Model, Panel } from './model';
@@ -24,7 +24,26 @@ export const panelAfter = (panel: Panel, frame: PanelFrame): Panel => {
       return { _tag: 'Text', text: frame.text };
     case 'Gone':
       return { _tag: 'Gone', reason: frame.reason };
+    case 'Screen':
+      return { _tag: 'Screen', image: frame.image, width: frame.width, height: frame.height, url: frame.url, title: frame.title, at: frame.at };
   }
+};
+
+const TAP_SLOP_PX = 8;
+
+const browser = (model: Model, input: BrowserInput): Return => (model.surfaceId ? { model, commands: [SendBrowser({ surfaceId: model.surfaceId, input })] } : { model });
+
+const released = (model: Model, screenX: number, screenY: number): Return => {
+  const press = model.press;
+
+  if (!press) return { model };
+  const cleared = { ...model, press: null };
+  const dx = screenX - press.screenX;
+  const dy = screenY - press.screenY;
+
+  if (Math.hypot(dx, dy) < TAP_SLOP_PX) return browser(cleared, { _tag: 'Tap', x: press.pageX, y: press.pageY });
+
+  return browser(cleared, { _tag: 'Scroll', dx: -dx * press.scale, dy: -dy * press.scale });
 };
 
 const follow = (model: Model): Return['commands'] => (model.followTail ? [FollowTail()] : []);
@@ -37,7 +56,10 @@ const received = (model: Model, message: RelayToPhone): Return => {
       return { model: { ...model, sidebar: message.sidebar } };
     case 'Frame': {
       if (message.frame.surfaceId !== model.surfaceId) return { model };
-      const next = { ...model, panel: panelAfter(model.panel, message.frame) };
+      const address = message.frame._tag === 'Screen' && !model.editingAddress ? message.frame.url : model.address;
+      const next = { ...model, address, panel: panelAfter(model.panel, message.frame) };
+
+      if (message.frame._tag === 'Screen') return { model: next };
 
       return { model: next, commands: follow(next) };
     }
@@ -48,7 +70,7 @@ const received = (model: Model, message: RelayToPhone): Return => {
 
 const navigate = (model: Model, workspaceId: string | null, surfaceId: string | null, push: boolean): Return => {
   const changedSurface = surfaceId !== model.surfaceId;
-  const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail, draft: changedSurface ? storedDraft(surfaceId) : model.draft };
+  const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail, draft: changedSurface ? storedDraft(surfaceId) : model.draft, press: null, editingAddress: changedSurface ? false : model.editingAddress, address: changedSurface ? '' : model.address };
   const commands = [...(changedSurface ? [OpenSurface({ surfaceId })] : []), ...(push ? [PushLocation({ workspaceId, surfaceId })] : [])];
 
   return { model: next, commands };
@@ -92,4 +114,10 @@ export const update = (model: Model, message: Message): Return =>
     ClickedJumpToLatest: () => ({ model: { ...model, followTail: true }, commands: [JumpToLatest()] }),
     ClickedReconnect: () => ({ model: { ...model, connection: 'connecting', socketEpoch: model.socketEpoch + 1, failures: 0 } }),
     CompletedEffect: () => ({ model }),
+    PressedScreen: (press) => ({ model: { ...model, press } }),
+    ReleasedScreen: ({ screenX, screenY }) => released(model, screenX, screenY),
+    SentBrowser: ({ input }) => browser(model, input),
+    UpdatedAddress: ({ value }) => ({ model: { ...model, address: value, editingAddress: true } }),
+    FocusedAddress: () => ({ model: { ...model, editingAddress: true } }),
+    SubmittedAddress: () => (model.address.trim() ? browser({ ...model, editingAddress: false }, { _tag: 'Navigate', url: model.address.trim() }) : { model }),
   });

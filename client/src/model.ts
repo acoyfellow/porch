@@ -10,7 +10,12 @@ export const Panel = Schema.Union([
   Schema.TaggedStruct('Pi', { status: Schema.String, entries: Schema.Array(PiEntry) }),
   Schema.TaggedStruct('Text', { text: Schema.String }),
   Schema.TaggedStruct('Gone', { reason: Schema.String }),
+  Schema.TaggedStruct('Screen', { image: Schema.String, width: Schema.Number, height: Schema.Number, url: Schema.String, title: Schema.String, at: Schema.Number }),
 ]);
+
+export const Press = Schema.Struct({ screenX: Schema.Number, screenY: Schema.Number, pageX: Schema.Number, pageY: Schema.Number, scale: Schema.Number });
+
+export type Press = typeof Press.Type;
 
 export type Panel = typeof Panel.Type;
 
@@ -35,6 +40,9 @@ export const Model = Schema.Struct({
   collapsed: Schema.Array(Schema.String),
   now: Schema.Number,
   who: Schema.String,
+  press: Schema.NullOr(Press),
+  address: Schema.String,
+  editingAddress: Schema.Boolean,
 });
 
 export type Model = typeof Model.Type;

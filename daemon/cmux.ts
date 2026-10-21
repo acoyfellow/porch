@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { Group, Sidebar, Surface, SurfaceKind, Workspace } from '../shared/protocol';
+import type { AllowedKey, Group, Sidebar, Surface, SurfaceKind, Workspace } from '../shared/protocol';
 
 const run = promisify(execFile);
 
@@ -102,6 +102,6 @@ export const sendText = async (surfaceId: string, text: string, submit: boolean)
   if (submit) await run(CMUX, ['send-key', '--surface', surfaceId, 'Enter'], { timeout: TIMEOUT_MS, encoding: 'utf8' });
 };
 
-export const sendKey = async (surfaceId: string, key: 'Escape'): Promise<void> => {
+export const sendKey = async (surfaceId: string, key: AllowedKey): Promise<void> => {
   await run(CMUX, ['send-key', '--surface', surfaceId, key], { timeout: TIMEOUT_MS, encoding: 'utf8' });
 };

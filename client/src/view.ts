@@ -57,7 +57,7 @@ const account = (h: H, who: string): Html =>
     [h.Class('ml-auto flex items-center gap-2 pr-2 text-xs text-zinc-500')],
     [
       who ? h.span([h.Id('who'), h.Class('hidden max-w-40 truncate sm:inline'), h.Title(who)], [who]) : null,
-      h.a([h.Id('sign-out'), h.Href('/cdn-cgi/access/logout'), h.Class('flex min-h-11 items-center rounded-lg px-3 text-zinc-300 active:bg-zinc-800'), h.Title(who ? `Signed in as ${who}` : 'Sign out')], ['Sign out']),
+      h.a([h.Id('sign-out'), h.Href('/cdn-cgi/access/logout'), h.Class('flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-lg px-3 text-zinc-300 active:bg-zinc-800'), h.Title(who ? `Signed in as ${who}` : 'Sign out')], ['Sign out']),
     ],
   );
 
@@ -67,7 +67,10 @@ const header = (h: H, title: string, back: boolean, who: string): Html =>
     [
       back
         ? h.button([h.Id('back'), h.Class('flex size-11 items-center justify-center rounded-lg text-xl text-zinc-300 active:bg-zinc-800'), h.AriaLabel('Back'), h.OnClick(Message.ClickedBack())], ['‹'])
-        : h.span([h.Class('pl-3 font-mono text-sm font-semibold tracking-wide text-zinc-200')], ['porch']),
+        : h.span(
+            [h.Class('flex items-center gap-2 pl-2 font-mono text-sm font-semibold tracking-wide text-zinc-200')],
+            [h.img([h.Src('/favicon.svg'), h.Alt(''), h.Class('size-7'), h.AriaHidden(true)]), 'porch'],
+          ),
       h.h1([h.Class('truncate text-[15px] font-semibold text-zinc-100')], [back ? title : '']),
       account(h, who),
     ],
@@ -218,12 +221,94 @@ const outgoingView = (h: H, outgoing: Outgoing): Html =>
     [outgoing.text, h.div([h.Class('mt-1 text-[11px] text-zinc-500')], [outgoing.state === 'failed' ? `Not sent: ${outgoing.reason ?? 'unknown error'}` : outgoing.state === 'sending' ? 'Sending to your Mac…' : 'Delivered to your Mac'])],
   );
 
+type ScreenPanel = Extract<Model['panel'], { readonly _tag: 'Screen' }>;
+
+const pagePoint = (panel: ScreenPanel, clientX: number, clientY: number) => {
+  const image = document.getElementById('screen');
+  const box = image?.getBoundingClientRect();
+
+  if (!box || box.width === 0) return null;
+  const scale = panel.width / box.width;
+
+  return { pageX: (clientX - box.left) * scale, pageY: (clientY - box.top) * scale, scale };
+};
+
+const screenView = (h: H, panel: ScreenPanel): Html =>
+  h.div(
+    [h.DataAttribute('panel', 'screen'), h.Class('relative select-none bg-white')],
+    [
+      h.img([
+        h.Id('screen'),
+        h.Src(panel.image),
+        h.Alt(panel.title ? `Live view of ${panel.title}` : 'Live view of the browser on your Mac'),
+        h.Draggable(false),
+        h.DataAttribute('page-width', String(panel.width)),
+        h.Class('block w-full touch-none cursor-pointer'),
+        h.OnPointerDown((_type, button, screenX, screenY, _time, clientX, clientY) => {
+          if (button !== 0) return Option.none();
+          const point = pagePoint(panel, clientX, clientY);
+
+          return point ? Option.some(Message.PressedScreen({ screenX, screenY, ...point })) : Option.none();
+        }),
+        h.OnPointerUp((screenX, screenY) => Option.some(Message.ReleasedScreen({ screenX, screenY }))),
+      ]),
+    ],
+  );
+
+const NAV_BUTTON = 'flex size-11 shrink-0 items-center justify-center rounded-lg text-lg text-zinc-300 active:bg-zinc-800';
+
+const browserBar = (h: H, model: Model): Html =>
+  h.form(
+    [h.Id('address-form'), h.Class('flex items-center gap-1 border-b border-zinc-800 px-2 py-1.5'), h.OnSubmit(Message.SubmittedAddress())],
+    [
+      h.button([h.Id('browser-back'), h.Type('button'), h.Class(NAV_BUTTON), h.AriaLabel('Back'), h.OnClick(Message.SentBrowser({ input: { _tag: 'Back' } }))], ['←']),
+      h.button([h.Id('browser-forward'), h.Type('button'), h.Class(NAV_BUTTON), h.AriaLabel('Forward'), h.OnClick(Message.SentBrowser({ input: { _tag: 'Forward' } }))], ['→']),
+      h.input([
+        h.Id('address'),
+        h.Type('text'),
+        h.Class('min-h-10 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 font-mono text-[13px] text-zinc-100'),
+        h.Value(model.address),
+        h.AriaLabel('Address'),
+        h.Placeholder('Search or enter address'),
+        h.OnFocus(Message.FocusedAddress()),
+        h.OnInput((value) => Message.UpdatedAddress({ value })),
+      ]),
+      h.button([h.Id('browser-reload'), h.Type('button'), h.Class(NAV_BUTTON), h.AriaLabel('Reload'), h.OnClick(Message.SentBrowser({ input: { _tag: 'Reload' } }))], ['↻']),
+    ],
+  );
+
+const SCREEN_KEYS = new Set(['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+const keyboardBar = (h: H): Html =>
+  h.div(
+    [h.Class('flex items-center gap-2 border-t border-zinc-800 bg-[#0b0c0f] px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]')],
+    [
+      h.input([
+        h.Id('screen-keys'),
+        h.Type('text'),
+        h.Class('min-h-11 flex-1 rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-base text-zinc-100 placeholder:text-zinc-500'),
+        h.Placeholder('Tap a field, then type here'),
+        h.AriaLabel('Type into the page'),
+        h.OnBeforeInputPreventDefault((inputType, data) => {
+          if (inputType === 'deleteContentBackward') return Option.some(Message.SentBrowser({ input: { _tag: 'Press', key: 'Backspace' } }));
+
+          return Option.map(data, (text) => Message.SentBrowser({ input: { _tag: 'Type', text } }));
+        }),
+        h.OnKeyDownPreventDefault((key) =>
+          SCREEN_KEYS.has(key) ? Option.some(Message.SentBrowser({ input: { _tag: 'Press', key: key as 'Enter' } })) : Option.none(),
+        ),
+      ]),
+    ],
+  );
+
 const panelBody = (h: H, model: Model): Html => {
   const panel = model.panel;
 
   switch (panel._tag) {
     case 'Waiting':
-      return h.p([h.Class('p-6 text-sm text-zinc-400'), h.DataAttribute('panel', 'waiting')], [model.machineOnline ? 'Opening this panel on your Mac…' : 'Your Mac is offline. This panel will load when it reconnects.']);
+      return h.p([h.Class('p-6 text-sm text-zinc-400'), h.DataAttribute('panel', 'waiting')], [model.machineOnline ? 'Connecting to the live view…' : 'Your Mac is offline. The live view starts when it reconnects.']);
+    case 'Screen':
+      return screenView(h, panel);
     case 'Gone':
       return h.p([h.Class('p-6 text-sm text-zinc-400'), h.DataAttribute('panel', 'gone')], [panel.reason]);
     case 'Text':
@@ -269,11 +354,13 @@ const panelView = (h: H, model: Model): Html =>
   h.div(
     [h.Class('flex min-h-0 flex-1 flex-col')],
     [
+      model.panel._tag === 'Screen' ? browserBar(h, model) : null,
       h.div([h.Id('feed'), h.Role('log'), h.AriaLive('polite'), h.Class('relative min-h-0 flex-1 overflow-y-auto overscroll-contain'), h.OnScroll((scrollTop) => Message.ScrolledFeed({ atBottom: isNearBottom(scrollTop) }))], [panelBody(h, model)]),
       model.followTail
         ? null
         : h.button([h.Id('jump-to-latest'), h.Class('absolute bottom-24 right-4 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-200 shadow'), h.OnClick(Message.ClickedJumpToLatest())], ['Jump to latest']),
       model.panel._tag === 'Pi' || model.panel._tag === 'Text' ? composer(h, model) : null,
+      model.panel._tag === 'Screen' ? keyboardBar(h) : null,
     ],
   );
 

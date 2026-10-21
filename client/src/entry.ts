@@ -6,6 +6,7 @@ import { Message } from './message';
 import { Model } from './model';
 import { locationOf } from './route';
 import { phoneSocket } from './socket';
+import { installScreenWheel } from './wheel';
 import { update } from './update';
 import { MAX_RECONNECTS, view } from './view';
 
@@ -37,6 +38,9 @@ const init = (input: Flags) => ({
     collapsed: [],
     now: input.now,
     who: input.who,
+    press: null,
+    address: '',
+    editingAddress: false,
   },
   commands: input.surfaceId ? [OpenSurface({ surfaceId: input.surfaceId })] : [],
 });
@@ -84,3 +88,7 @@ const application = Runtime.makeApplication({
 });
 
 Runtime.run(application, { flags });
+
+installScreenWheel();
+
+if ('serviceWorker' in navigator && globalThis.location.protocol === 'https:') void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);

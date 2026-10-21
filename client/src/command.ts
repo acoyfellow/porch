@@ -1,10 +1,10 @@
 import { Effect, Schema } from 'effect';
 import { Command, Navigation } from 'foldkit';
-import { KEY_PATH, SEND_PATH } from '../../shared/protocol';
+import { BrowserInput, KEY_PATH, SEND_PATH } from '../../shared/protocol';
 import { Message } from './message';
 import { pathOf } from './route';
 import { saveDraft } from './draft';
-import { openSurface } from './socket';
+import { openSurface, sendBrowser } from './socket';
 
 const SendReply = Schema.Struct({ ok: Schema.Boolean, reason: Schema.optional(Schema.NullOr(Schema.String)) });
 
@@ -56,6 +56,12 @@ export const FollowTail = Command.define('FollowTail', {
       if (feed) feed.scrollTop = feed.scrollHeight;
     });
   }).pipe(Effect.as(Message.CompletedEffect())),
+});
+
+export const SendBrowser = Command.define('SendBrowser', {
+  args: { surfaceId: Schema.String, input: BrowserInput },
+  messages: [Message.CompletedEffect],
+  execute: ({ surfaceId, input }) => Effect.sync(() => sendBrowser(surfaceId, input)).pipe(Effect.as(Message.CompletedEffect())),
 });
 
 export const newRequestId = () => crypto.randomUUID();
