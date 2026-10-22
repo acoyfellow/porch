@@ -18,6 +18,8 @@ export default Alchemy.Stack(
 
     const mcpToken = yield* Cloudflare.Access.ServiceToken('mcp-token', { name: `porch mcp (${domain})`, duration: '8760h' });
 
+    const realtime = yield* Cloudflare.Calls.App('realtime', { name: `porch (${domain})` });
+
     const app = yield* Cloudflare.Access.Application('access', {
       type: 'self_hosted',
       name: `porch (${domain})`,
@@ -45,6 +47,8 @@ export default Alchemy.Stack(
         OWNER_EMAIL: owner,
         DAEMON_TOKEN_ID: daemonToken.clientId,
         MCP_TOKEN_ID: mcpToken.clientId,
+        REALTIME_APP_ID: realtime.appId,
+        REALTIME_TOKEN: realtime.secret,
       },
     });
 

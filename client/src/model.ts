@@ -1,5 +1,5 @@
 import { Schema } from 'effect';
-import { PiEntry, Sidebar } from '../../shared/protocol';
+import { PiEntry, PublishedTrack, Sidebar } from '../../shared/protocol';
 
 export const Connection = Schema.Literals(['connecting', 'online', 'offline']);
 
@@ -45,6 +45,10 @@ export const Model = Schema.Struct({
   press: Schema.NullOr(Press),
   address: Schema.String,
   editingAddress: Schema.Boolean,
+  tracks: Schema.Record(Schema.String, PublishedTrack),
+  mode: Schema.Literals(['live', 'fallback']),
+  live: Schema.Literals(['off', 'connecting', 'live', 'stalled', 'failed']),
+  liveDetail: Schema.String,
 });
 
 export type Model = typeof Model.Type;

@@ -27,6 +27,9 @@ export const Message = defineMessageUnion({
   UpdatedAddress: { value: Schema.String },
   FocusedAddress: {},
   SubmittedAddress: {},
+  ToggledMode: {},
+  LiveChanged: { state: Schema.Literals(['connecting', 'live', 'stalled', 'failed']), detail: Schema.String },
+  ClickedBringToFront: {},
 });
 
 export type Message = typeof Message.Type;

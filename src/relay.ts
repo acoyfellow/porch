@@ -5,6 +5,7 @@ import { AllowedKey, BrowserInput, DaemonToRelay, MAX_SEND_LENGTH, type PanelFra
 
 const DAEMON_TAG = 'daemon';
 const PHONE_TAG = 'phone';
+const PUBLISHERS_KEY = 'rtc-publishers';
 const SIDEBAR_KEY = 'sidebar';
 const MACHINE_KEY = 'machine';
 const SEND_TIMEOUT_MS = 10_000;
@@ -37,6 +38,51 @@ export class Relay extends DurableObject {
   private readonly frameTimes = new Map<string, number>();
   private readonly actionTimes = new Map<string, number>();
   private closing: WebSocket | null = null;
+  private async rtcOwner(sessionId: string): Promise<string | undefined> {
+    return this.ctx.storage.get<string>(`rtc-owner:${sessionId}`);
+  }
+
+  private async publisherMap(): Promise<Map<string, { readonly sessionId: string; readonly trackName: string; readonly at: number }>> {
+    return new Map(Object.entries((await this.ctx.storage.get<Record<string, { sessionId: string; trackName: string; at: number }>>(PUBLISHERS_KEY)) ?? {}));
+  }
+
+  private async savePublishers(publishers: Map<string, { readonly sessionId: string; readonly trackName: string; readonly at: number }>): Promise<void> {
+    const tracks = Object.fromEntries(publishers);
+    await this.ctx.storage.put(PUBLISHERS_KEY, tracks);
+    this.broadcast({ _tag: 'Tracks', tracks });
+  }
+
+  private async rtcClaim(request: Request): Promise<Response> {
+    const body = (await request.json()) as { sessionId?: string; owner?: string };
+
+    if (!body.sessionId || !body.owner) return new Response('bad request', { status: 400 });
+    await this.ctx.storage.put(`rtc-owner:${body.sessionId}`, body.owner);
+
+    return Response.json({ ok: true });
+  }
+
+  private async rtcPublish(request: Request): Promise<Response> {
+    const body = (await request.json()) as { surfaceId?: string; sessionId?: string; trackName?: string };
+
+    if (!body.surfaceId || !body.sessionId || !body.trackName) return new Response('bad request', { status: 400 });
+    const publishers = await this.publisherMap();
+    publishers.set(body.surfaceId, { sessionId: body.sessionId, trackName: body.trackName, at: Date.now() });
+    await this.ctx.storage.put(`rtc-owner:${body.sessionId}`, 'producer');
+    await this.savePublishers(publishers);
+
+    return Response.json({ ok: true });
+  }
+
+  private async rtcUnpublish(request: Request): Promise<Response> {
+    const body = (await request.json()) as { sessionId?: string };
+
+    const publishers = await this.publisherMap();
+
+    for (const [surfaceId, each] of publishers) if (each.sessionId === body.sessionId) publishers.delete(surfaceId);
+    await this.savePublishers(publishers);
+
+    return Response.json({ ok: true });
+  }
 
   private markAction(surfaceId: string) {
     this.actionTimes.set(surfaceId, Date.now() + ACTION_SETTLE_MS);
@@ -66,6 +112,24 @@ export class Relay extends DurableObject {
 
     if (url.pathname === '/media') return this.mediaFromHttp(request, url);
 
+    if (url.pathname === '/rtc/claim' && request.method === 'POST') return this.rtcClaim(request);
+
+    if (url.pathname === '/rtc/owns') return Response.json({ owns: (await this.rtcOwner(url.searchParams.get('session') ?? '')) === url.searchParams.get('owner') });
+
+    if (url.pathname === '/rtc/producers') return Response.json({ sessions: [...(await this.publisherMap()).values()].map((each) => each.sessionId) });
+
+    if (url.pathname === '/rtc/publish' && request.method === 'POST') return this.rtcPublish(request);
+
+    if (url.pathname === '/rtc/unpublish' && request.method === 'POST') return this.rtcUnpublish(request);
+
+    if (url.pathname === '/focus' && request.method === 'POST') {
+      const body = (await request.json()) as { surfaceId?: string };
+
+      return body.surfaceId && this.toDaemon({ _tag: 'Focus', surfaceId: body.surfaceId }) ? Response.json({ ok: true }) : Response.json({ ok: false }, { status: 503 });
+    }
+
+    if (url.pathname === '/rtc/tracks') return Response.json({ tracks: Object.fromEntries(await this.publisherMap()) });
+
     return new Response('not found', { status: 404 });
   }
 
@@ -92,6 +156,7 @@ export class Relay extends DurableObject {
     this.toPhone(socket, { _tag: 'Machine', ...this.machineState(record) });
 
     if (sidebar) this.toPhone(socket, { _tag: 'Sidebar', sidebar });
+    this.toPhone(socket, { _tag: 'Tracks', tracks: Object.fromEntries(await this.publisherMap()) });
   }
 
   private toPhone(socket: WebSocket, message: RelayToPhone) {

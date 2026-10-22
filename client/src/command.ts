@@ -64,6 +64,16 @@ export const SendBrowser = Command.define('SendBrowser', {
   execute: ({ surfaceId, input }) => Effect.sync(() => sendBrowser(surfaceId, input)).pipe(Effect.as(Message.CompletedEffect())),
 });
 
+export const FocusSurface = Command.define('FocusSurface', {
+  args: { surfaceId: Schema.String },
+  messages: [Message.CompletedEffect],
+  execute: ({ surfaceId }) =>
+    Effect.tryPromise(() => fetch('/api/focus', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ surfaceId }) })).pipe(
+      Effect.as(Message.CompletedEffect()),
+      Effect.orElseSucceed(() => Message.CompletedEffect()),
+    ),
+});
+
 export const newRequestId = () => crypto.randomUUID();
 
 export const SaveDraft = Command.define('SaveDraft', {

@@ -2,8 +2,10 @@ import { hostname } from 'node:os';
 import { Schema } from 'effect';
 import { type DaemonToRelay, type PanelFrame, type PiEntry, RelayToDaemon, type Sidebar, type Surface } from '../shared/protocol';
 import { applyInput, captureScreen, type PinnedViewport, pinViewport, resetViewport, UnstableFrame } from './browser';
-import { readScreen, readSidebar, sendKey, sendText } from './cmux';
+import { readScreen, readSidebar, rpc, sendKey, sendText } from './cmux';
+import { startCamera } from './camera';
 import { loadConfig } from './config';
+import { startWhipProxy } from './whip';
 import { fileInfo, isStreamable, readChunk } from './files';
 import { openTail, piLinks, readNew, sessionFile, type Tail } from './pi';
 
@@ -21,6 +23,15 @@ type Watch = { readonly surfaceId: string; kind: WatchKind; tail: Tail | null; s
 
 const config = await loadConfig();
 const watches = new Map<string, Watch>();
+const camera = startCamera(rpc, startWhipProxy(config), (line) => log(line));
+process.on('SIGTERM', () => {
+  camera.stop();
+  process.exit(0);
+});
+process.on('SIGINT', () => {
+  camera.stop();
+  process.exit(0);
+});
 let socket: WebSocket | null = null;
 let lastSidebar = '';
 let sidebar: Sidebar | null = null;
@@ -292,6 +303,8 @@ const onMessage = async (raw: string) => {
     return;
   }
 
+  if (message._tag === 'Focus') return focusSurface(message.surfaceId);
+
   if (message._tag === 'Key') {
     if (surfaceOf(message.surfaceId)) await sendKey(message.surfaceId, message.key).catch((error) => log('key failed', error));
 
@@ -307,6 +320,14 @@ const onMessage = async (raw: string) => {
   } catch (error) {
     send({ _tag: 'Sent', requestId: message.requestId, ok: false, reason: error instanceof Error ? error.message.slice(0, 200) : 'send failed' });
   }
+};
+
+const focusSurface = async (surfaceId: string) => {
+  const workspace = sidebar?.workspaces.find((each) => each.surfaces.some((surface) => surface.id === surfaceId));
+
+  if (workspace) await rpc('workspace.select', { workspace_id: workspace.id }).catch((error) => log('focus workspace failed', error instanceof Error ? error.message : error));
+  await rpc('surface.focus', { surface_id: surfaceId }).catch((error) => log('focus surface failed', error instanceof Error ? error.message : error));
+  await camera.sync();
 };
 
 const refreshSidebar = async () => {
@@ -361,5 +382,6 @@ const every = (ms: number, task: () => Promise<unknown>) => {
 };
 
 every(SIDEBAR_EVERY_MS, pushSidebar);
+every(1000, camera.sync);
 every(PANEL_EVERY_MS, () => Promise.all([...watches.values()].map(pollWatch)));
 connect();

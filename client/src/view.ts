@@ -2,6 +2,7 @@ import { Option } from 'effect';
 import type { Document, Html, HtmlBuilder } from 'foldkit/html';
 import type { Group, PiEntry, Surface, Workspace } from '../../shared/protocol';
 import { Message } from './message';
+import { WatchLive } from './mount';
 import type { Model, Outgoing } from './model';
 import { pathOf } from './route';
 
@@ -377,10 +378,57 @@ const composer = (h: H, model: Model): Html =>
     ],
   );
 
-const panelView = (h: H, model: Model): Html =>
+const liveLabel: Record<Model['live'], string> = { off: 'Starting camera', connecting: 'Connecting', live: 'Live', stalled: 'Reconnecting', failed: 'Camera unavailable' };
+
+const modeToggle = (h: H, model: Model): Html =>
+  h.button(
+    [h.Id('mode-toggle'), h.Type('button'), h.Class('min-h-9 rounded-lg border border-zinc-700 px-3 text-xs text-zinc-200'), h.AriaPressed(model.mode === 'fallback' ? 'true' : 'false'), h.OnClick(Message.ToggledMode())],
+    [model.mode === 'live' ? 'Text view' : 'Live view'],
+  );
+
+const liveBar = (h: H, model: Model): Html =>
+  h.div(
+    [h.Id('live-bar'), h.Class('flex items-center gap-2 border-b border-zinc-800/80 px-3 py-1.5 text-xs text-zinc-400')],
+    [
+      model.mode === 'live'
+        ? h.span([h.Id('live-state'), h.DataAttribute('state', model.live), h.Class('flex items-center gap-1.5')], [
+            h.span([h.Class(`inline-block size-2 rounded-full ${model.live === 'live' ? 'bg-red-500' : model.live === 'failed' ? 'bg-zinc-600' : 'bg-amber-400'}`), h.AriaHidden(true)], []),
+            liveLabel[model.live],
+          ])
+        : h.span([], ['Text view']),
+      h.span([h.Class('ml-auto')], []),
+      modeToggle(h, model),
+    ],
+  );
+
+const notPublished = (h: H): Html =>
+  h.div([h.Id('live-absent'), h.Class('flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-zinc-400')], [
+    h.p([], ['This pane is not on screen on your Mac, so there is no live picture.']),
+    h.button([h.Id('bring-to-front'), h.Type('button'), h.Class('min-h-11 rounded-xl bg-sky-600 px-4 text-[15px] font-medium text-white'), h.OnClick(Message.ClickedBringToFront())], ['Bring to front on Mac']),
+  ]);
+
+const liveView = (h: H, model: Model): Html => {
+  const track = model.surfaceId ? model.tracks[model.surfaceId] : undefined;
+
+  return h.div([h.Class('flex min-h-0 flex-1 flex-col')], [
+    liveBar(h, model),
+    track
+      ? h.div([h.Class('relative flex min-h-0 flex-1 items-start justify-center overflow-hidden bg-black')], [
+          h.keyed('video')(`${track.sessionId}:${track.trackName}`, [h.Id('live-video'), h.Class('max-h-full max-w-full'), h.Autoplay(true), h.Muted(true), h.Playsinline(true), h.OnMount(WatchLive(track))], []),
+        ])
+      : notPublished(h),
+    model.panel._tag === 'Pi' || model.panel._tag === 'Text' ? composer(h, model) : null,
+    model.panel._tag === 'Screen' ? keyboardBar(h) : null,
+  ]);
+};
+
+const panelView = (h: H, model: Model): Html => (model.mode === 'live' ? liveView(h, model) : fallbackView(h, model));
+
+const fallbackView = (h: H, model: Model): Html =>
   h.div(
     [h.Class('flex min-h-0 flex-1 flex-col')],
     [
+      liveBar(h, model),
       model.panel._tag === 'Screen' ? browserBar(h, model) : null,
       h.div([h.Id('feed'), h.Role('log'), h.AriaLive('polite'), h.Class('relative min-h-0 flex-1 overflow-y-auto overscroll-contain'), h.OnScroll((scrollTop) => Message.ScrolledFeed({ atBottom: isNearBottom(scrollTop) }))], [panelBody(h, model)]),
       model.followTail

@@ -105,6 +105,7 @@ export const DaemonToRelay = Schema.Union([
 export type DaemonToRelay = typeof DaemonToRelay.Type;
 
 export const RelayToDaemon = Schema.Union([
+  Schema.TaggedStruct('Focus', { surfaceId: Schema.String }),
   Schema.TaggedStruct('Watch', { surfaceIds: Schema.Array(Schema.String), refresh: Schema.optional(Schema.Array(Schema.String)), viewports: Schema.optional(Schema.Array(SurfaceViewport)) }),
   Schema.TaggedStruct('MediaRequest', { requestId: Schema.String, surfaceId: Schema.String, start: Schema.Number, end: Schema.NullOr(Schema.Number) }),
   Schema.TaggedStruct('Send', { requestId: Schema.String, surfaceId: Schema.String, text: Schema.String, submit: Schema.Boolean }),
@@ -114,7 +115,12 @@ export const RelayToDaemon = Schema.Union([
 
 export type RelayToDaemon = typeof RelayToDaemon.Type;
 
+export const PublishedTrack = Schema.Struct({ sessionId: Schema.String, trackName: Schema.String, at: Schema.Number });
+
+export type PublishedTrack = typeof PublishedTrack.Type;
+
 export const RelayToPhone = Schema.Union([
+  Schema.TaggedStruct('Tracks', { tracks: Schema.Record(Schema.String, PublishedTrack) }),
   Schema.TaggedStruct('Machine', { online: Schema.Boolean, machine: Schema.NullOr(Schema.String), seenAt: Schema.NullOr(Schema.Number) }),
   Schema.TaggedStruct('Sidebar', { sidebar: Sidebar }),
   Schema.TaggedStruct('Frame', { frame: PanelFrame }),

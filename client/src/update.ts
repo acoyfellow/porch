@@ -1,6 +1,6 @@
 import type { Command } from 'foldkit';
 import type { BrowserInput, PanelFrame, PiEntry, RelayToPhone } from '../../shared/protocol';
-import { CopyText, FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendBrowser, SendKey, SendText } from './command';
+import { CopyText, FocusSurface, FollowTail, JumpToLatest, newRequestId, OpenSurface, PushLocation, SaveDraft, SendBrowser, SendKey, SendText } from './command';
 import { storedDraft } from './draft';
 import { Message } from './message';
 import type { Model, Panel } from './model';
@@ -69,12 +69,14 @@ const received = (model: Model, message: RelayToPhone): Return => {
     }
     case 'Sent':
       return { model };
+    case 'Tracks':
+      return { model: { ...model, tracks: message.tracks } };
   }
 };
 
 const navigate = (model: Model, workspaceId: string | null, surfaceId: string | null, push: boolean): Return => {
   const changedSurface = surfaceId !== model.surfaceId;
-  const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail, draft: changedSurface ? storedDraft(surfaceId) : model.draft, press: null, editingAddress: changedSurface ? false : model.editingAddress, address: changedSurface ? '' : model.address };
+  const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail, draft: changedSurface ? storedDraft(surfaceId) : model.draft, press: null, editingAddress: changedSurface ? false : model.editingAddress, address: changedSurface ? '' : model.address, live: changedSurface ? 'off' : model.live, liveDetail: changedSurface ? '' : model.liveDetail };
   const commands = [...(changedSurface ? [OpenSurface({ surfaceId })] : []), ...(push ? [PushLocation({ workspaceId, surfaceId })] : [])];
 
   return { model: next, commands };
@@ -123,5 +125,8 @@ export const update = (model: Model, message: Message): Return =>
     SentBrowser: ({ input }) => browser(model, input),
     UpdatedAddress: ({ value }) => ({ model: { ...model, address: value, editingAddress: true } }),
     FocusedAddress: () => ({ model: { ...model, editingAddress: true } }),
+    ToggledMode: () => ({ model: { ...model, mode: model.mode === 'live' ? 'fallback' : 'live' } }),
+    LiveChanged: ({ state, detail }) => ({ model: { ...model, live: state, liveDetail: detail } }),
+    ClickedBringToFront: () => (model.surfaceId ? { model, commands: [FocusSurface({ surfaceId: model.surfaceId })] } : { model }),
     SubmittedAddress: () => (model.address.trim() ? browser({ ...model, editingAddress: false }, { _tag: 'Navigate', url: model.address.trim() }) : { model }),
   });

@@ -41,6 +41,10 @@ const init = (input: Flags) => ({
     press: null,
     address: '',
     editingAddress: false,
+    tracks: {},
+    mode: 'live' as const,
+    live: 'off' as const,
+    liveDetail: '',
   },
   commands: input.surfaceId ? [OpenSurface({ surfaceId: input.surfaceId })] : [],
 });
