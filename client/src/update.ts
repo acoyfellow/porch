@@ -77,7 +77,7 @@ const received = (model: Model, message: RelayToPhone): Return => {
 const navigate = (model: Model, workspaceId: string | null, surfaceId: string | null, push: boolean): Return => {
   const changedSurface = surfaceId !== model.surfaceId;
   const next: Model = { ...model, workspaceId, surfaceId, panel: changedSurface ? { _tag: 'Waiting' } : model.panel, followTail: changedSurface ? true : model.followTail, draft: changedSurface ? storedDraft(surfaceId) : model.draft, press: null, editingAddress: changedSurface ? false : model.editingAddress, address: changedSurface ? '' : model.address, live: changedSurface ? 'off' : model.live, liveDetail: changedSurface ? '' : model.liveDetail };
-  const commands = [...(changedSurface ? [OpenSurface({ surfaceId })] : []), ...(push ? [PushLocation({ workspaceId, surfaceId })] : [])];
+  const commands = [...(changedSurface ? [OpenSurface({ surfaceId })] : []), ...(changedSurface && surfaceId ? [FocusSurface({ surfaceId })] : []), ...(push ? [PushLocation({ workspaceId, surfaceId })] : [])];
 
   return { model: next, commands };
 };
@@ -127,6 +127,5 @@ export const update = (model: Model, message: Message): Return =>
     FocusedAddress: () => ({ model: { ...model, editingAddress: true } }),
     ToggledMode: () => ({ model: { ...model, mode: model.mode === 'live' ? 'fallback' : 'live' } }),
     LiveChanged: ({ state, detail }) => ({ model: { ...model, live: state, liveDetail: detail } }),
-    ClickedBringToFront: () => (model.surfaceId ? { model, commands: [FocusSurface({ surfaceId: model.surfaceId })] } : { model }),
     SubmittedAddress: () => (model.address.trim() ? browser({ ...model, editingAddress: false }, { _tag: 'Navigate', url: model.address.trim() }) : { model }),
   });

@@ -1,7 +1,7 @@
 import './styles.css';
 import { Duration, Effect, Schema, Stream } from 'effect';
 import { Runtime, Subscription, Url } from 'foldkit';
-import { OpenSurface } from './command';
+import { FocusSurface, OpenSurface } from './command';
 import { Message } from './message';
 import { Model } from './model';
 import { locationOf } from './route';
@@ -46,7 +46,7 @@ const init = (input: Flags) => ({
     live: 'off' as const,
     liveDetail: '',
   },
-  commands: input.surfaceId ? [OpenSurface({ surfaceId: input.surfaceId })] : [],
+  commands: input.surfaceId ? [OpenSurface({ surfaceId: input.surfaceId }), FocusSurface({ surfaceId: input.surfaceId })] : [],
 });
 
 const reconnectDelay = (epoch: number) => Duration.millis(epoch === 0 ? 0 : Math.min(10_000, 500 * 2 ** Math.min(epoch, 5)));

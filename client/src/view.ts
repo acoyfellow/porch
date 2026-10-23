@@ -403,8 +403,7 @@ const liveBar = (h: H, model: Model): Html =>
 
 const notPublished = (h: H): Html =>
   h.div([h.Id('live-absent'), h.Class('flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-zinc-400')], [
-    h.p([], ['This pane is not on screen on your Mac, so there is no live picture.']),
-    h.button([h.Id('bring-to-front'), h.Type('button'), h.Class('min-h-11 rounded-xl bg-sky-600 px-4 text-[15px] font-medium text-white'), h.OnClick(Message.ClickedBringToFront())], ['Bring to front on Mac']),
+    h.p([], ['Bringing this pane to the front on your Mac…']),
   ]);
 
 const liveView = (h: H, model: Model): Html => {

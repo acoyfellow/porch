@@ -13,7 +13,7 @@ const results: Array<[string, boolean, string]> = [];
 const check = (name: string, ok: boolean, detail: string) => results.push([name, ok, detail]);
 const created = (output: string) => /([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})/u.exec(output)?.[1] ?? null;
 
-const workspaceId = (JSON.parse(cmux(['rpc', 'workspace.current', '{}'])) as { workspace: { id: string } }).workspace.id;
+const workspaceId = (JSON.parse(cmux(['rpc', 'window.list', '{}'])) as { windows: Array<{ visible?: boolean; selected_workspace_id?: string }> }).windows.find((each) => each.visible)?.selected_workspace_id ?? '';
 
 const api = async (path: string, body: unknown) => {
   const response = await fetch(new URL(path, origin), { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -193,8 +193,24 @@ try {
     await context.close();
   }
 
-  const fallback = await api('/api/focus', { surfaceId: surfaces[0] ?? '' });
-  check('bring-to-front route answers', typeof fallback === 'object' && fallback !== null && (fallback as { ok?: boolean }).ok === true, JSON.stringify(fallback));
+  const selectedWorkspace = () => (JSON.parse(cmux(['rpc', 'window.list', '{}'])) as { windows: Array<{ visible?: boolean; selected_workspace_id?: string }> }).windows.find((each) => each.visible)?.selected_workspace_id ?? '';
+  const background = (JSON.parse(cmux(['rpc', 'mobile.workspace.list', '{}'])) as { workspaces: Array<{ id: string; surfaces?: Array<{ surface_id?: string; kind?: string }> }> }).workspaces.find((each) => each.id !== workspaceId && each.surfaces?.some((surface) => surface.kind === 'terminal'));
+  const backgroundSurface = background?.surfaces?.find((surface) => surface.kind === 'terminal')?.surface_id ?? '';
+
+  if (background && backgroundSurface) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: auth });
+    const page = await context.newPage();
+    await page.goto(new URL(`/w/${encodeURIComponent(background.id)}/s/${encodeURIComponent(backgroundSurface)}`, origin).toString());
+    const deadline = Date.now() + 8000;
+
+    while (Date.now() < deadline && selectedWorkspace() !== background.id) await sleep(250);
+    const focused = selectedWorkspace() === background.id;
+    const playing = await page.waitForFunction(() => document.querySelector('#live-state')?.getAttribute('data-state') === 'live', undefined, { timeout: 20_000 }).then(() => true, () => false);
+    const detail = await page.evaluate(() => `${document.querySelector('#live-state')?.textContent ?? ''} ${document.body.innerText.includes('Bringing') ? 'waiting-for-track' : ''}`);
+    check('opening a background pane brings it to the front and plays live', focused && playing, `focused ${focused}, live ${playing}, ${detail}`);
+    await context.close();
+    cmux(['rpc', 'workspace.select', JSON.stringify({ workspace_id: workspaceId })]);
+  } else check('opening a background pane brings it to the front and plays live', false, 'no background terminal found');
 } finally {
   await browser.close();
 
