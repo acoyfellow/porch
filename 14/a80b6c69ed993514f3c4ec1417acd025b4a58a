@@ -1,0 +1,23 @@
+.gitignore
+  s_5ddfc8f4108175::t_ddf871cbd39465 8
+gate/webrtc.ts
+  s_5ddfc8f4108175::t_9375a86bbc34c1 2
+package.json
+  s_5ddfc8f4108175::t_81c9159f1e7b31 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "14a80b6c69ed993514f3c4ec1417acd025b4a58a",
+  "prompts": {},
+  "sessions": {
+    "s_5ddfc8f4108175": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0fc06-d951-77a8-8358-cd5dae6891bd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Jordan Coeyman <jcoeyman@cloudflare.com>"
+    }
+  }
+}
