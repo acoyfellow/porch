@@ -5,3 +5,4 @@ dist/
 .wrangler/
 *.local.*
 public/app/
+.DS_Store

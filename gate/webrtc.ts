@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chromium, type Page } from '/Users/jcoeyman/cloudflare/basic/node_modules/playwright-core/index.mjs';
+import { chromium, type Page } from 'playwright-core';
 import { mcpCredentials } from './credentials';
 
 const origin = process.argv[2] ?? 'https://pi.coey.dev';
