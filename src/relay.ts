@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { parseRange } from './range';
+import { isPostRoute } from './routes';
 import { Schema } from 'effect';
 import { AllowedKey, BrowserInput, DaemonToRelay, MAX_SEND_LENGTH, type PanelFrame, PhoneToRelay, type RelayToDaemon, type RelayToPhone, type Sidebar } from '../shared/protocol';
 
@@ -102,27 +103,27 @@ export class Relay extends DurableObject {
 
     if (url.pathname === '/machine') return Response.json(this.machineState(await this.ctx.storage.get<MachineRecord>(MACHINE_KEY)));
 
-    if (url.pathname === '/send' && request.method === 'POST') return this.sendFromHttp(request);
+    if (isPostRoute(url.pathname, request.method, '/send')) return this.sendFromHttp(request);
 
     if (url.pathname === '/frame') return this.frameFromHttp(url);
 
-    if (url.pathname === '/key' && request.method === 'POST') return this.keyFromHttp(request);
+    if (isPostRoute(url.pathname, request.method, '/key')) return this.keyFromHttp(request);
 
-    if (url.pathname === '/browser' && request.method === 'POST') return this.browserFromHttp(request);
+    if (isPostRoute(url.pathname, request.method, '/browser')) return this.browserFromHttp(request);
 
     if (url.pathname === '/media') return this.mediaFromHttp(request, url);
 
-    if (url.pathname === '/rtc/claim' && request.method === 'POST') return this.rtcClaim(request);
+    if (isPostRoute(url.pathname, request.method, '/rtc/claim')) return this.rtcClaim(request);
 
     if (url.pathname === '/rtc/owns') return Response.json({ owns: (await this.rtcOwner(url.searchParams.get('session') ?? '')) === url.searchParams.get('owner') });
 
     if (url.pathname === '/rtc/producers') return Response.json({ sessions: [...(await this.publisherMap()).values()].map((each) => each.sessionId) });
 
-    if (url.pathname === '/rtc/publish' && request.method === 'POST') return this.rtcPublish(request);
+    if (isPostRoute(url.pathname, request.method, '/rtc/publish')) return this.rtcPublish(request);
 
-    if (url.pathname === '/rtc/unpublish' && request.method === 'POST') return this.rtcUnpublish(request);
+    if (isPostRoute(url.pathname, request.method, '/rtc/unpublish')) return this.rtcUnpublish(request);
 
-    if (url.pathname === '/focus' && request.method === 'POST') {
+    if (isPostRoute(url.pathname, request.method, '/focus')) {
       const body = (await request.json()) as { surfaceId?: string };
 
       return body.surfaceId && this.toDaemon({ _tag: 'Focus', surfaceId: body.surfaceId }) ? Response.json({ ok: true }) : Response.json({ ok: false }, { status: 503 });
