@@ -1,0 +1,23 @@
+src/relay.ts
+  s_5ddfc8f4108175::t_78b7a86c9e7ebb 3,106,110,112,116,122,124,126
+src/routes.ts
+  s_5ddfc8f4108175::t_179201fdebb585 1-5
+test/routes.test.ts
+  s_5ddfc8f4108175::t_779ade685e0fd2 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "044919d4cd4fced3db5d501870559d92cdb0466a",
+  "prompts": {},
+  "sessions": {
+    "s_5ddfc8f4108175": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0fc06-d951-77a8-8358-cd5dae6891bd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Jordan Coeyman <jcoeyman@cloudflare.com>"
+    }
+  }
+}
